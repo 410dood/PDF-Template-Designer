@@ -729,8 +729,13 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       lastLoadedJsonRef.current = payload;
 
       const attribute = props.templateJsonAttr?.get(templateItem);
-      if (attribute && attribute.status === "available" && !attribute.readOnly) {
-        attribute.setValue(payload);
+      if (attribute && attribute.status === "available") {
+        try {
+          attribute.setValue(payload);
+        } catch (error) {
+          // Best-effort update; avoid crashing the widget when Mendix marks the attribute read-only.
+          console.warn("Failed to update Template JSON attribute.", error);
+        }
       }
 
       if (runOnChangeAction) {
