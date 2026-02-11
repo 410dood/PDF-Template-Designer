@@ -17,12 +17,60 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `Template JSON` (attribute): bind to `PdfTemplateDefinition.TemplateJson` (LongString).
 - `Base PDF options` (data source): list of selectable `PdfTemplate` objects (used by Mendix association picker).
 - `Base PDF association`: bind to `PdfTemplateDefinition_PdfTemplate` (Reference to `PdfTemplate` FileDocument).
+- `Field key source` (enumeration): `Manual text input` (default), `Dropdown from datasource`, or `Dropdown from JSON`.
+- `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource`.
+- `Field key option attribute` (optional): attribute from the datasource object that contains the key string.
+- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON`.
 - `PDF.js worker URL` (text template, optional): explicit URL for the worker script (Advanced category).
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
 - `Show shortcut hints` (boolean, default `true`): show/hide the shortcuts help text in the toolbar.
 - `Enable keyboard shortcuts` (boolean, default `true`): enable/disable shortcut handling in the editor.
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
 - `On save`: optional microflow to commit the updated TemplateJson.
+
+**Field key options JSON examples**
+```json
+["ClientFullName", "ClientDateOfBirth", "ProgramName"]
+```
+
+```json
+[
+  { "key": "ClientFullName", "label": "Client Full Name" },
+  { "key": "ClientDateOfBirth", "label": "Date of Birth" },
+  { "value": "ProgramName", "label": "Program" }
+]
+```
+
+```json
+[
+  { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
+  { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
+  { "key": "ProgramIsActive", "label": "Program Is Active", "type": "Boolean" }
+]
+```
+
+When `type` is provided, the dropdown shows it (for example `Client Date Of Birth (DateTime)`).
+Selecting an option also auto-maps widget field type for:
+- `Boolean` -> `checkbox`
+- `Date`/`DateTime`/`Time` -> `date`
+- `Signature` -> `signature`
+
+**Fixed key options JSON (copy/paste)**
+Use this when `Field key source = Dropdown from JSON`.
+```json
+[
+  { "key": "EnrollmentURecordId", "label": "Enrollment Record ID", "type": "String" },
+  { "key": "EnrollmentStartDate", "label": "Enrollment Start Date", "type": "DateTime" },
+  { "key": "EnrollmentEndDate", "label": "Enrollment End Date", "type": "DateTime" },
+  { "key": "EnrollmentStatus", "label": "Enrollment Status", "type": "Enumeration" },
+  { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
+  { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
+  { "key": "ProgramName", "label": "Program Name", "type": "String" },
+  { "key": "ProgramCode", "label": "Program Code", "type": "String" },
+  { "key": "EndEnrollmentReasonName", "label": "End Enrollment Reason", "type": "String" },
+  { "key": "CountyName", "label": "County Name", "type": "String" }
+]
+```
 
 **Designer UX (MVP+)**
 - Click-to-place workflow: choose a palette tool, then click on the PDF to place the field.

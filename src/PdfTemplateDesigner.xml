@@ -5,34 +5,79 @@
     <name>PDF Template Designer</name>
     <description>Design PDF templates by placing overlay fields on top of a base PDF.</description>
     <properties>
-        <property key="dataSource" type="datasource" isList="true" required="true">
+        <property key="dataSource" type="object" isList="true" required="true">
             <caption>Template definition</caption>
             <category>Data</category>
-            <description>Data source that provides the PdfTemplateDefinition object (context or list with one item).</description>
+            <description>Context object for PdfTemplateDefinition (place the widget inside a Data view).</description>
+            <properties>
+                <property key="templateJsonAttr" type="attribute" required="true">
+                    <caption>Template JSON</caption>
+                    <category>Template</category>
+                    <description>LongString attribute that stores the template JSON.</description>
+                    <attributeTypes>
+                        <attributeType name="String" />
+                    </attributeTypes>
+                </property>
+                <property key="basePdfOptionsSource" type="datasource" isList="true" required="false">
+                    <caption>Base PDF options</caption>
+                    <category>Template</category>
+                    <description>Datasource that returns PdfTemplate objects selectable for the Base PDF association.</description>
+                </property>
+                <property key="basePdfAssociation" type="association" required="true" selectableObjects="basePdfOptionsSource">
+                    <caption>Base PDF association</caption>
+                    <category>Template</category>
+                    <description>Association from PdfTemplateDefinition to PdfTemplate (FileDocument).</description>
+                    <associationTypes>
+                        <associationType name="Reference" />
+                    </associationTypes>
+                </property>
+                <property key="onChangeAction" type="action" required="false">
+                    <caption>On change</caption>
+                    <category>Actions</category>
+                    <description>Action executed whenever the template JSON changes from editor interactions.</description>
+                </property>
+                <property key="onSaveAction" type="action" required="false">
+                    <caption>On save</caption>
+                    <category>Actions</category>
+                    <description>Action executed after saving TemplateJson (usually a commit microflow).</description>
+                </property>
+            </properties>
         </property>
 
-        <property key="templateJsonAttr" type="attribute" required="true" dataSource="dataSource">
-            <caption>Template JSON</caption>
-            <category>Template</category>
-            <description>LongString attribute that stores the template JSON.</description>
+        <property key="fieldKeySourceMode" type="enumeration" defaultValue="manual" required="true">
+            <caption>Field key source</caption>
+            <category>Field keys</category>
+            <description>Choose how the Key field is edited in Field properties.</description>
+            <enumerationValues>
+                <enumerationValue key="manual">Manual text input</enumerationValue>
+                <enumerationValue key="datasource">Dropdown from datasource</enumerationValue>
+                <enumerationValue key="json">Dropdown from JSON</enumerationValue>
+            </enumerationValues>
+        </property>
+
+        <property key="fieldKeyOptionsSource" type="datasource" isList="true" required="false">
+            <caption>Field key options datasource</caption>
+            <category>Field keys</category>
+            <description>Datasource that returns records containing allowed field key values.</description>
+        </property>
+
+        <property key="fieldKeyOptionAttribute" type="attribute" dataSource="fieldKeyOptionsSource" required="false">
+            <caption>Field key option attribute</caption>
+            <category>Field keys</category>
+            <description>Attribute that contains the key value to use in the dropdown.</description>
             <attributeTypes>
                 <attributeType name="String" />
+                <attributeType name="Enum" />
+                <attributeType name="Integer" />
+                <attributeType name="Long" />
+                <attributeType name="AutoNumber" />
             </attributeTypes>
         </property>
 
-        <property key="basePdfOptionsSource" type="datasource" isList="true" required="false">
-            <caption>Base PDF options</caption>
-            <category>Template</category>
-            <description>Datasource that returns PdfTemplate objects selectable for the Base PDF association.</description>
-        </property>
-
-        <property key="basePdfAssociation" type="association" required="true" dataSource="dataSource" selectableObjects="basePdfOptionsSource">
-            <caption>Base PDF association</caption>
-            <category>Template</category>
-            <description>Association from PdfTemplateDefinition to PdfTemplate (FileDocument).</description>
-            <associationTypes>
-                <associationType name="Reference" />
-            </associationTypes>
+        <property key="fieldKeyOptionsJson" type="string" multiline="true" required="false">
+            <caption>Field key options JSON</caption>
+            <category>Field keys</category>
+            <description>JSON array used for dropdown values. Supports string items or objects with key/value and optional label.</description>
         </property>
 
         <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
@@ -57,18 +102,6 @@
             <caption>Enable keyboard shortcuts</caption>
             <category>Behavior</category>
             <description>Enable keyboard shortcuts such as undo/redo, duplicate, delete, and arrow-key nudging.</description>
-        </property>
-
-        <property key="onChangeAction" type="action" required="false" dataSource="dataSource">
-            <caption>On change</caption>
-            <category>Actions</category>
-            <description>Action executed whenever the template JSON changes from editor interactions.</description>
-        </property>
-
-        <property key="onSaveAction" type="action" required="false" dataSource="dataSource">
-            <caption>On save</caption>
-            <category>Actions</category>
-            <description>Action executed after saving TemplateJson (usually a commit microflow).</description>
         </property>
 
         <systemProperty key="Editability" />

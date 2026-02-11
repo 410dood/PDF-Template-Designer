@@ -4,23 +4,41 @@
  * @author Mendix Widgets Framework Team
  */
 import { CSSProperties } from "react";
-import { DynamicValue, ListValue, ListActionValue, ListAttributeValue, ListReferenceValue } from "mendix";
+import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue, ReferenceValue } from "mendix";
+import { Big } from "big.js";
+
+export interface DataSourceType {
+    templateJsonAttr: EditableValue<string>;
+    basePdfOptionsSource?: ListValue;
+    basePdfAssociation: ReferenceValue;
+    onChangeAction?: ActionValue;
+    onSaveAction?: ActionValue;
+}
+
+export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
+
+export interface DataSourcePreviewType {
+    templateJsonAttr: string;
+    basePdfOptionsSource: {} | { caption: string } | { type: string } | null;
+    basePdfAssociation: string;
+    onChangeAction: {} | null;
+    onSaveAction: {} | null;
+}
 
 export interface PdfTemplateDesignerContainerProps {
     name: string;
     class: string;
     style?: CSSProperties;
     tabIndex?: number;
-    dataSource: ListValue;
-    templateJsonAttr: ListAttributeValue<string>;
-    basePdfOptionsSource?: ListValue;
-    basePdfAssociation: ListReferenceValue;
+    dataSource: DataSourceType[];
+    fieldKeySourceMode: FieldKeySourceModeEnum;
+    fieldKeyOptionsSource?: ListValue;
+    fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
+    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
-    onChangeAction?: ListActionValue;
-    onSaveAction?: ListActionValue;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -34,14 +52,13 @@ export interface PdfTemplateDesignerPreviewProps {
     readOnly: boolean;
     renderMode: "design" | "xray" | "structure";
     translate: (text: string) => string;
-    dataSource: {} | { caption: string } | { type: string } | null;
-    templateJsonAttr: string;
-    basePdfOptionsSource: {} | { caption: string } | { type: string } | null;
-    basePdfAssociation: string;
+    dataSource: DataSourcePreviewType[];
+    fieldKeySourceMode: FieldKeySourceModeEnum;
+    fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
+    fieldKeyOptionAttribute: string;
+    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl: string;
     pdfJsScriptUrl: string;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
-    onChangeAction: {} | null;
-    onSaveAction: {} | null;
 }

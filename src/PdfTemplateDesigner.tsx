@@ -6,6 +6,13 @@ import { PdfTemplateDesignerContainerProps } from "../typings/PdfTemplateDesigne
 
 type FieldType = "text" | "checkbox" | "date" | "signature";
 type FieldAlign = "left" | "center" | "right";
+type FieldKeySourceMode = "manual" | "datasource" | "json";
+
+interface KeyOption {
+  value: string;
+  label: string;
+  dataType?: string;
+}
 
 interface TemplateField {
   key: string;
@@ -93,6 +100,106 @@ function isFieldType(value: unknown): value is FieldType {
 
 function isAlign(value: unknown): value is FieldAlign {
   return value === "left" || value === "center" || value === "right";
+}
+
+function isFieldKeySourceMode(value: unknown): value is FieldKeySourceMode {
+  return value === "manual" || value === "datasource" || value === "json";
+}
+
+function normalizeStatus(value: unknown): "available" | "loading" | "unavailable" {
+  const text = typeof value === "string" ? value.toLowerCase() : "";
+  if (text === "available") {
+    return "available";
+  }
+  if (text === "loading") {
+    return "loading";
+  }
+  return "unavailable";
+}
+
+function toTrimmedString(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function normalizeKeyOption(value: unknown): KeyOption | undefined {
+  if (typeof value === "string" || typeof value === "number") {
+    const key = toTrimmedString(value);
+    return key ? { value: key, label: key } : undefined;
+  }
+
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const key = toTrimmedString(record.key ?? record.value);
+  if (!key) {
+    return undefined;
+  }
+
+  const label = toTrimmedString(record.label) || key;
+  const dataType = toTrimmedString(record.type ?? record.dataType) || undefined;
+  return { value: key, label, dataType };
+}
+
+function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
+  if (!dataType) {
+    return undefined;
+  }
+
+  const normalized = dataType.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.includes("boolean")) {
+    return "checkbox";
+  }
+  if (normalized.includes("date") || normalized.includes("time")) {
+    return "date";
+  }
+  if (normalized.includes("signature")) {
+    return "signature";
+  }
+  return undefined;
+}
+
+function dedupeKeyOptions(options: KeyOption[]): KeyOption[] {
+  const seen = new Set<string>();
+  const result: KeyOption[] = [];
+  for (const option of options) {
+    if (!option.value || seen.has(option.value)) {
+      continue;
+    }
+    seen.add(option.value);
+    result.push(option);
+  }
+  return result;
+}
+
+function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?: string } {
+  if (!text || !text.trim()) {
+    return { options: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      return { options: [], error: "Field key options JSON must be an array." };
+    }
+
+    const options = dedupeKeyOptions(
+      parsed
+        .map(item => normalizeKeyOption(item))
+        .filter((item): item is KeyOption => Boolean(item))
+    );
+    return { options };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid JSON";
+    return { options: [], error: message };
+  }
 }
 
 function normalizeField(input: any, index: number): TemplateField {
@@ -435,6 +542,13 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const [pageThumbs, setPageThumbs] = useState<Record<number, string>>({});
   const [isBuildingThumbs, setIsBuildingThumbs] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState("1");
+  const dataSourceItem = useMemo(() => props.dataSource?.[0], [props.dataSource]);
+  const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
+    ? props.fieldKeySourceMode
+    : "manual";
+  const fieldKeyOptionsSource = props.fieldKeyOptionsSource;
+  const fieldKeyOptionAttribute = props.fieldKeyOptionAttribute;
+  const fieldKeyOptionsJson = props.fieldKeyOptionsJson || "";
 
   useEffect(() => {
     fieldsRef.current = fields;
@@ -444,22 +558,15 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     selectedKeyRef.current = selectedKey;
   }, [selectedKey]);
 
-  const templateItem = useMemo(() => {
-    if (!props.dataSource || props.dataSource.status !== "available") {
-      return undefined;
-    }
-    return props.dataSource.items?.[0];
-  }, [props.dataSource]);
-
   const workerUrlResolution = useMemo(
-    () => resolveTextTemplateValue(props.pdfJsWorkerUrl, templateItem),
-    [props.pdfJsWorkerUrl, templateItem]
+    () => resolveTextTemplateValue(props.pdfJsWorkerUrl),
+    [props.pdfJsWorkerUrl]
   );
   const configuredWorkerUrl = workerUrlResolution.value;
 
   const scriptUrlResolution = useMemo(
-    () => resolveTextTemplateValue((props as any).pdfJsScriptUrl, templateItem),
-    [templateItem, (props as any).pdfJsScriptUrl]
+    () => resolveTextTemplateValue((props as any).pdfJsScriptUrl),
+    [(props as any).pdfJsScriptUrl]
   );
   const configuredScriptUrl = scriptUrlResolution.value;
   const derivedScriptUrl = deriveScriptUrlFromWorkerUrl(configuredWorkerUrl);
@@ -488,23 +595,58 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   }, [isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl]);
 
   const templateJsonValue = useMemo(() => {
-    if (!templateItem || !props.templateJsonAttr) {
-      return undefined;
-    }
-    return props.templateJsonAttr.get(templateItem);
-  }, [templateItem, props.templateJsonAttr]);
+    return dataSourceItem?.templateJsonAttr;
+  }, [dataSourceItem]);
 
   const basePdfReference = useMemo(() => {
-    if (!templateItem || !props.basePdfAssociation) {
-      return undefined;
-    }
-    return props.basePdfAssociation.get(templateItem);
-  }, [templateItem, props.basePdfAssociation]);
+    return dataSourceItem?.basePdfAssociation;
+  }, [dataSourceItem]);
 
   const basePdfObject = basePdfReference?.status === "available" ? basePdfReference.value : undefined;
   const basePdfId = basePdfObject?.id;
   const templateJsonText =
     templateJsonValue && templateJsonValue.status === "available" ? templateJsonValue.value || "" : "";
+  const jsonKeyOptionsState = useMemo(
+    () => parseFieldKeyOptionsJson(fieldKeyOptionsJson),
+    [fieldKeyOptionsJson]
+  );
+  const datasourceKeyOptionsState = useMemo(() => {
+    if (!fieldKeyOptionsSource) {
+      return { options: [] as KeyOption[], loading: false };
+    }
+    if (!fieldKeyOptionAttribute) {
+      return {
+        options: [] as KeyOption[],
+        loading: false,
+        error: "Configure 'Field key option attribute' for datasource mode."
+      };
+    }
+
+    const sourceStatus = normalizeStatus((fieldKeyOptionsSource as any).status);
+    const items = fieldKeyOptionsSource.items || [];
+    const options: KeyOption[] = [];
+
+    for (const item of items) {
+      const attributeValue = fieldKeyOptionAttribute.get(item);
+      if (!attributeValue || normalizeStatus((attributeValue as any).status) !== "available") {
+        continue;
+      }
+      const raw = toTrimmedString((attributeValue as any).value);
+      if (!raw) {
+        continue;
+      }
+      options.push({ value: raw, label: raw });
+    }
+
+    return {
+      options: dedupeKeyOptions(options),
+      loading: sourceStatus === "loading",
+      error:
+        sourceStatus !== "loading" && items.length > 0 && options.length === 0
+          ? "Datasource returned no usable key values."
+          : undefined
+    };
+  }, [fieldKeyOptionsSource, fieldKeyOptionAttribute]);
 
   useEffect(() => {
     if (!templateJsonValue || templateJsonValue.status !== "available") {
@@ -721,14 +863,10 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       } = {}
     ) => {
       const { runSaveAction = false, runOnChangeAction = true } = options;
-      if (!templateItem) {
-        return;
-      }
-
       const payload = buildTemplateJson(nextFields, basePdfId);
       lastLoadedJsonRef.current = payload;
 
-      const attribute = props.templateJsonAttr?.get(templateItem);
+      const attribute = dataSourceItem?.templateJsonAttr;
       if (attribute && attribute.status === "available") {
         try {
           attribute.setValue(payload);
@@ -739,14 +877,14 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       }
 
       if (runOnChangeAction) {
-        runConfiguredAction(props.onChangeAction?.get(templateItem));
+        runConfiguredAction(dataSourceItem?.onChangeAction);
       }
 
       if (runSaveAction) {
-        runConfiguredAction(props.onSaveAction?.get(templateItem));
+        runConfiguredAction(dataSourceItem?.onSaveAction);
       }
     },
-    [templateItem, props.templateJsonAttr, props.onChangeAction, props.onSaveAction, basePdfId, runConfiguredAction]
+    [dataSourceItem, basePdfId, runConfiguredAction]
   );
 
   const pushUndoSnapshot = useCallback((snapshot?: TemplateField[]) => {
@@ -935,6 +1073,45 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     () => fields.find(field => field.key === selectedKey) || null,
     [fields, selectedKey]
   );
+  const keyInputState = useMemo(() => {
+    if (fieldKeySourceMode === "datasource") {
+      return {
+        mode: "dropdown" as const,
+        options: datasourceKeyOptionsState.options,
+        loading: datasourceKeyOptionsState.loading,
+        error: datasourceKeyOptionsState.error
+      };
+    }
+
+    if (fieldKeySourceMode === "json") {
+      return {
+        mode: "dropdown" as const,
+        options: jsonKeyOptionsState.options,
+        loading: false,
+        error: jsonKeyOptionsState.error
+      };
+    }
+
+    return {
+      mode: "manual" as const,
+      options: [] as KeyOption[],
+      loading: false,
+      error: undefined as string | undefined
+    };
+  }, [fieldKeySourceMode, datasourceKeyOptionsState, jsonKeyOptionsState]);
+  const selectedFieldKeyOptions = useMemo(() => {
+    if (keyInputState.mode !== "dropdown" || !selectedField) {
+      return [] as KeyOption[];
+    }
+
+    const currentValue = selectedField.key;
+    const hasCurrentValue = keyInputState.options.some(option => option.value === currentValue);
+    if (hasCurrentValue || !currentValue) {
+      return keyInputState.options;
+    }
+
+    return [{ value: currentValue, label: `${currentValue} (current)` }, ...keyInputState.options];
+  }, [keyInputState, selectedField]);
 
   useEffect(() => {
     if (!dragState) {
@@ -1471,18 +1648,50 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
             <div className="pdf-template-designer__form">
               <div>
                 <div className="pdf-template-designer__label">Key</div>
-                <input
-                  className="pdf-template-designer__input"
-                  value={selectedField.key}
-                  onChange={event => {
-                    const nextKey = event.target.value.trim();
-                    if (!nextKey || fields.some(field => field.key === nextKey && field.key !== selectedField.key)) {
-                      return;
-                    }
-                    updateField(selectedField.key, { key: nextKey });
-                    setSelectedKey(nextKey);
-                  }}
-                />
+                {keyInputState.mode === "dropdown" ? (
+                  <select
+                    className="pdf-template-designer__select"
+                    value={selectedField.key}
+                    onChange={event => {
+                      const nextKey = event.target.value.trim();
+                      if (!nextKey || fields.some(field => field.key === nextKey && field.key !== selectedField.key)) {
+                        return;
+                      }
+                      const selectedOption = selectedFieldKeyOptions.find(option => option.value === nextKey);
+                      const mappedType = mapDataTypeToFieldType(selectedOption?.dataType);
+                      updateField(selectedField.key, mappedType ? { key: nextKey, type: mappedType } : { key: nextKey });
+                      setSelectedKey(nextKey);
+                    }}
+                  >
+                    {selectedFieldKeyOptions.length === 0 ? (
+                      <option value={selectedField.key}>{selectedField.key || "No key options"}</option>
+                    ) : null}
+                    {selectedFieldKeyOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="pdf-template-designer__input"
+                    value={selectedField.key}
+                    onChange={event => {
+                      const nextKey = event.target.value.trim();
+                      if (!nextKey || fields.some(field => field.key === nextKey && field.key !== selectedField.key)) {
+                        return;
+                      }
+                      updateField(selectedField.key, { key: nextKey });
+                      setSelectedKey(nextKey);
+                    }}
+                  />
+                )}
+                {keyInputState.loading ? (
+                  <div className="pdf-template-designer__status">Loading key options...</div>
+                ) : null}
+                {keyInputState.error ? (
+                  <div className="pdf-template-designer__alert">{keyInputState.error}</div>
+                ) : null}
               </div>
               <div>
                 <div className="pdf-template-designer__label">Label</div>
