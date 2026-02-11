@@ -47,13 +47,13 @@
             <description>Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.</description>
         </property>
 
-        <property key="showShortcutHints" type="boolean" defaultValue="true" required="false">
+        <property key="showShortcutHints" type="boolean" defaultValue="true" required="true">
             <caption>Show shortcut hints</caption>
             <category>Behavior</category>
             <description>Show or hide the shortcuts help text in the editor toolbar.</description>
         </property>
 
-        <property key="enableKeyboardShortcuts" type="boolean" defaultValue="true" required="false">
+        <property key="enableKeyboardShortcuts" type="boolean" defaultValue="true" required="true">
             <caption>Enable keyboard shortcuts</caption>
             <category>Behavior</category>
             <description>Enable keyboard shortcuts such as undo/redo, duplicate, delete, and arrow-key nudging.</description>

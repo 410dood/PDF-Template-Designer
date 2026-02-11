@@ -17,8 +17,8 @@ export interface PdfTemplateDesignerContainerProps {
     basePdfAssociation: ListReferenceValue;
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
-    showShortcutHints?: boolean;
-    enableKeyboardShortcuts?: boolean;
+    showShortcutHints: boolean;
+    enableKeyboardShortcuts: boolean;
     onChangeAction?: ListActionValue;
     onSaveAction?: ListActionValue;
 }
