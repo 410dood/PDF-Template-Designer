@@ -39,6 +39,7 @@ export interface PdfTemplateDesignerContainerProps {
     pdfJsScriptUrl?: DynamicValue<string>;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
+    showFieldProperties: boolean;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -61,4 +62,5 @@ export interface PdfTemplateDesignerPreviewProps {
     pdfJsScriptUrl: string;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
+    showFieldProperties: boolean;
 }

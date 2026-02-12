@@ -114,6 +114,9 @@ The Java action expects a **data JSON** object where keys match template field `
 
 **Java action**
 - See `javasource/PdfTemplateDesigner/actions/GenerateFlattenedPdf.java`.
+- The action can treat the base FileDocument as either:
+  - a normal PDF, or
+  - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.
 - In module settings for `PdfTemplateDesigner`, add Java dependencies:
   - `org.apache.pdfbox:pdfbox:2.0.35`

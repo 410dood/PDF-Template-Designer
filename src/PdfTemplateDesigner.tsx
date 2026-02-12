@@ -54,6 +54,12 @@ interface PdfjsApi {
   GlobalWorkerOptions: { workerSrc: string };
 }
 
+interface LoadedImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
 interface PageSize {
   width: number;
   height: number;
@@ -477,6 +483,33 @@ function deriveWorkerUrlFromScriptUrl(scriptUrl?: string): string | undefined {
   return derived !== scriptUrl ? derived : undefined;
 }
 
+function loadImageFromBlob(blob: Blob): Promise<LoadedImage> {
+  return new Promise((resolve, reject) => {
+    if (typeof URL === "undefined" || typeof Image === "undefined") {
+      reject(new Error("Image preview is not supported in this browser."));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (width <= 0 || height <= 0) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Image has invalid dimensions."));
+        return;
+      }
+      resolve({ url: objectUrl, width, height });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to load image preview."));
+    };
+    image.src = objectUrl;
+  });
+}
+
 function resolveTextTemplateValue(property: unknown, templateItem?: unknown): { value?: string; isLoading: boolean } {
   if (!property) {
     return { isLoading: false };
@@ -515,6 +548,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const className = ["pdf-template-designer", props.class].filter(Boolean).join(" ");
   const showShortcutHints = props.showShortcutHints !== false;
   const enableKeyboardShortcuts = props.enableKeyboardShortcuts !== false;
+  const showFieldProperties = props.showFieldProperties !== false;
   const viewerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -532,6 +566,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pdfDoc, setPdfDoc] = useState<PdfjsDocumentProxy | null>(null);
+  const [imageBackgroundUrl, setImageBackgroundUrl] = useState<string | null>(null);
+  const [imageNaturalSize, setImageNaturalSize] = useState<PageSize | null>(null);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [renderScale, setRenderScale] = useState(1);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -542,6 +578,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const [pageThumbs, setPageThumbs] = useState<Record<number, string>>({});
   const [isBuildingThumbs, setIsBuildingThumbs] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState("1");
+  const imageObjectUrlRef = useRef<string | null>(null);
   const dataSourceItem = useMemo(() => props.dataSource?.[0], [props.dataSource]);
   const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
     ? props.fieldKeySourceMode
@@ -550,6 +587,13 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const fieldKeyOptionAttribute = props.fieldKeyOptionAttribute;
   const fieldKeyOptionsJson = props.fieldKeyOptionsJson || "";
 
+  const revokeImageObjectUrl = useCallback(() => {
+    if (imageObjectUrlRef.current) {
+      URL.revokeObjectURL(imageObjectUrlRef.current);
+      imageObjectUrlRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     fieldsRef.current = fields;
   }, [fields]);
@@ -557,6 +601,12 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   useEffect(() => {
     selectedKeyRef.current = selectedKey;
   }, [selectedKey]);
+
+  useEffect(() => {
+    return () => {
+      revokeImageObjectUrl();
+    };
+  }, [revokeImageObjectUrl]);
 
   const workerUrlResolution = useMemo(
     () => resolveTextTemplateValue(props.pdfJsWorkerUrl),
@@ -699,7 +749,10 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   useEffect(() => {
     if (!basePdfId) {
       setPdfDoc(null);
+      setImageBackgroundUrl(null);
+      setImageNaturalSize(null);
       setRenderError(null);
+      revokeImageObjectUrl();
       return;
     }
     if (isPdfJsConfigLoading) {
@@ -720,19 +773,48 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
         if (!response.ok) {
           throw new Error(`Failed to load PDF. HTTP ${response.status}.`);
         }
-        const data = await response.arrayBuffer();
-        const pdfjs = await loadPdfjs(resolvedScriptUrl);
-        pdfjs.GlobalWorkerOptions.workerSrc = resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
-        const doc = await pdfjs.getDocument({ data }).promise;
-        if (!cancelled) {
-          setPdfDoc(doc);
-          setPageIndex(0);
+        const blob = await response.blob();
+        const data = await blob.arrayBuffer();
+
+        try {
+          const pdfjs = await loadPdfjs(resolvedScriptUrl);
+          pdfjs.GlobalWorkerOptions.workerSrc = resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
+          const doc = await pdfjs.getDocument({ data }).promise;
+          if (!cancelled) {
+            setPdfDoc(doc);
+            setPageIndex(0);
+            setImageBackgroundUrl(null);
+            setImageNaturalSize(null);
+            revokeImageObjectUrl();
+          }
+          return;
+        } catch (pdfError) {
+          try {
+            const loadedImage = await loadImageFromBlob(blob);
+            if (!cancelled) {
+              revokeImageObjectUrl();
+              imageObjectUrlRef.current = loadedImage.url;
+              setImageBackgroundUrl(loadedImage.url);
+              setImageNaturalSize({ width: loadedImage.width, height: loadedImage.height });
+              setPdfDoc(null);
+              setPageIndex(0);
+            } else {
+              URL.revokeObjectURL(loadedImage.url);
+            }
+          } catch (imageError) {
+            const pdfMessage = pdfError instanceof Error ? pdfError.message : "Unknown PDF parse error.";
+            const imageMessage = imageError instanceof Error ? imageError.message : "Unknown image parse error.";
+            throw new Error(`Failed to load base document as PDF (${pdfMessage}) or image (${imageMessage}).`);
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load PDF.";
         if (!cancelled) {
           setRenderError(message);
           setPdfDoc(null);
+          setImageBackgroundUrl(null);
+          setImageNaturalSize(null);
+          revokeImageObjectUrl();
         }
       } finally {
         if (!cancelled) {
@@ -745,7 +827,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     return () => {
       cancelled = true;
     };
-  }, [basePdfId, isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl]);
+  }, [basePdfId, isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl, revokeImageObjectUrl]);
 
   useEffect(() => {
     if (!pdfDoc) {
@@ -755,6 +837,15 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       setPageIndex(0);
     }
   }, [pdfDoc, pageIndex]);
+
+  useEffect(() => {
+    if (!imageBackgroundUrl) {
+      return;
+    }
+    if (pageIndex !== 0) {
+      setPageIndex(0);
+    }
+  }, [imageBackgroundUrl, pageIndex]);
 
   useEffect(() => {
     if (!pdfDoc) {
@@ -801,8 +892,22 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   }, [pdfDoc, pageIndex, containerWidth, zoom]);
 
   useEffect(() => {
+    if (pdfDoc || !imageNaturalSize) {
+      return;
+    }
+
+    const fitScale = containerWidth ? Math.min(containerWidth / imageNaturalSize.width, 2) : 1;
+    setPageSize({ width: imageNaturalSize.width, height: imageNaturalSize.height });
+    setRenderScale(fitScale * zoom);
+  }, [pdfDoc, imageNaturalSize, containerWidth, zoom]);
+
+  useEffect(() => {
     if (!pdfDoc) {
-      setPageThumbs({});
+      if (imageBackgroundUrl) {
+        setPageThumbs({ 0: imageBackgroundUrl });
+      } else {
+        setPageThumbs({});
+      }
       setIsBuildingThumbs(false);
       return;
     }
@@ -846,7 +951,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc]);
+  }, [pdfDoc, imageBackgroundUrl]);
 
   const runConfiguredAction = useCallback((actionValue?: { canExecute: boolean; execute: () => void }) => {
     if (actionValue?.canExecute) {
@@ -1372,16 +1477,17 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   }, []);
 
   const applyPageJump = useCallback(() => {
-    const maxPages = pdfDoc?.numPages || 1;
+    const maxPages = pdfDoc?.numPages || (imageBackgroundUrl ? 1 : 1);
     const requested = Math.floor(toNumber(pageJumpInput, pageIndex + 1));
     const normalized = clamp(requested, 1, maxPages);
     setPageIndex(normalized - 1);
-  }, [pageJumpInput, pageIndex, pdfDoc]);
+  }, [pageJumpInput, pageIndex, pdfDoc, imageBackgroundUrl]);
 
-  const pageCount = pdfDoc?.numPages || 1;
+  const pageCount = pdfDoc?.numPages || (imageBackgroundUrl ? 1 : 1);
   const fieldsOnPage = fields.filter(field => field.page === pageIndex);
   const undoDisabled = undoStackRef.current.length === 0;
   const redoDisabled = redoStackRef.current.length === 0;
+  const hasRenderableDocument = Boolean(pdfDoc || imageBackgroundUrl);
   // Template coordinates are stored in PDF points (top-left origin). Multiply by renderScale for canvas pixels.
   const renderWidth = pageSize.width * renderScale;
   const renderHeight = pageSize.height * renderScale;
@@ -1399,7 +1505,11 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       {jsonError ? (
         <div className="pdf-template-designer__alert">Template JSON is invalid. {jsonError}</div>
       ) : null}
-      <div className="pdf-template-designer__layout">
+      <div
+        className={`pdf-template-designer__layout${
+          showFieldProperties ? "" : " pdf-template-designer__layout--no-properties"
+        }`}
+      >
         <aside className="pdf-template-designer__sidebar">
           <div>
             <div className="pdf-template-designer__section-title">Palette</div>
@@ -1589,9 +1699,19 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
             {!basePdfId ? <div className="pdf-template-designer__status">No base PDF linked.</div> : null}
             {loadingPdf ? <div className="pdf-template-designer__status">Loading PDF...</div> : null}
             {renderError ? <div className="pdf-template-designer__alert">{renderError}</div> : null}
-            {pdfDoc ? (
+            {hasRenderableDocument ? (
               <div className="pdf-template-designer__page" style={{ width: renderWidth, height: renderHeight }}>
-                <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />
+                {pdfDoc ? (
+                  <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />
+                ) : imageBackgroundUrl ? (
+                  <img
+                    className="pdf-template-designer__image-surface"
+                    src={imageBackgroundUrl}
+                    alt="Base document"
+                    style={{ width: renderWidth, height: renderHeight }}
+                    draggable={false}
+                  />
+                ) : null}
                 <div
                   className={`pdf-template-designer__overlay${
                     snapEnabled ? " pdf-template-designer__overlay--grid" : ""
@@ -1642,10 +1762,11 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
           </div>
         </section>
 
-        <aside className="pdf-template-designer__properties">
-          <div className="pdf-template-designer__section-title">Field properties</div>
-          {selectedField ? (
-            <div className="pdf-template-designer__form">
+        {showFieldProperties ? (
+          <aside className="pdf-template-designer__properties">
+            <div className="pdf-template-designer__section-title">Field properties</div>
+            {selectedField ? (
+              <div className="pdf-template-designer__form">
               <div>
                 <div className="pdf-template-designer__label">Key</div>
                 {keyInputState.mode === "dropdown" ? (
@@ -1804,11 +1925,12 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               >
                 Delete field
               </button>
-            </div>
-          ) : (
-            <div className="pdf-template-designer__status">Select a field to edit.</div>
-          )}
-        </aside>
+              </div>
+            ) : (
+              <div className="pdf-template-designer__status">Select a field to edit.</div>
+            )}
+          </aside>
+        ) : null}
       </div>
     </div>
   );

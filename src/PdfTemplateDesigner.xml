@@ -104,6 +104,12 @@
             <description>Enable keyboard shortcuts such as undo/redo, duplicate, delete, and arrow-key nudging.</description>
         </property>
 
+        <property key="showFieldProperties" type="boolean" defaultValue="true" required="true">
+            <caption>Show field properties</caption>
+            <category>Behavior</category>
+            <description>Show or hide the right-side Field properties card.</description>
+        </property>
+
         <systemProperty key="Editability" />
     </properties>
 </widget>

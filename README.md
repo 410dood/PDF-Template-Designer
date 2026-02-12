@@ -25,6 +25,7 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
 - `Show shortcut hints` (boolean, default `true`): show/hide the shortcuts help text in the toolbar.
 - `Enable keyboard shortcuts` (boolean, default `true`): enable/disable shortcut handling in the editor.
+- `Show field properties` (boolean, default `true`): show/hide the right-side field properties panel.
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
 - `On save`: optional microflow to commit the updated TemplateJson.
 
@@ -75,6 +76,7 @@ Use this when `Field key source = Dropdown from JSON`.
 **Designer UX (MVP+)**
 - Click-to-place workflow: choose a palette tool, then click on the PDF to place the field.
 - Palette drag/drop: drag a field type from the palette and drop onto the page.
+- Base document fallback: if the linked FileDocument is an image (`.png/.jpg/.jpeg`) instead of a PDF, the widget renders it as a 1-page canvas with the same field overlay behavior.
 - Page thumbnails: quick page navigation via sidebar thumbnails.
 - Quick page jump: type a page number in the toolbar.
 - Smart editing: alignment guides + snapping to nearby fields while moving/resizing.

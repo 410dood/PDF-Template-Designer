@@ -6,9 +6,12 @@ import com.mendix.systemwideinterfaces.core.IMendixObject;
 import com.mendix.systemwideinterfaces.core.UserAction;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.awt.image.BufferedImage;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -16,6 +19,8 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDPageContentStream.AppendMode;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,7 +57,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return baseBytes;
         }
 
-        try (PDDocument doc = PDDocument.load(baseBytes)) {
+        try (PDDocument doc = openPdfOrImage(baseBytes)) {
             for (TemplateField field : template.fields) {
                 if (field == null) {
                     continue;
@@ -79,6 +84,28 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             doc.save(out);
             return out.toByteArray();
+        }
+    }
+
+    private static PDDocument openPdfOrImage(byte[] sourceBytes) throws Exception {
+        try {
+            return PDDocument.load(sourceBytes);
+        } catch (Exception pdfError) {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(sourceBytes));
+            if (image == null) {
+                throw pdfError;
+            }
+
+            PDDocument doc = new PDDocument();
+            PDRectangle rect = new PDRectangle(image.getWidth(), image.getHeight());
+            PDPage page = new PDPage(rect);
+            doc.addPage(page);
+
+            PDImageXObject imageXObject = LosslessFactory.createFromImage(doc, image);
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
+                cs.drawImage(imageXObject, 0, 0, rect.getWidth(), rect.getHeight());
+            }
+            return doc;
         }
     }
 
