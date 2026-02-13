@@ -1,11 +1,11 @@
 # PDF Template Designer (Mendix widget + module guidance)
 
-This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix module blueprint for storing template definitions and generating flattened PDFs.
+This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix module blueprint for storing template definitions and generating output PDFs (flattened content or AcroForm fields).
 
 **What's included**
 - `pdftemplatedesigner/` widget source (React/TypeScript)
 - `mendix-module/PdfTemplateDesigner/README.md` with domain model, microflows, and page guidance
-- `mendix-module/PdfTemplateDesigner/javasource/.../GenerateFlattenedPdf.java` Java action stub using PDFBox
+- `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java` Java action stub using PDFBox
 
 **Widget setup**
 1. Install dependencies: `npm install`
@@ -23,9 +23,16 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON`.
 - `PDF.js worker URL` (text template, optional): explicit URL for the worker script (Advanced category).
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
+- `SigWeb script URL` (text template, optional): URL to `SigWebTablet.js` for external signature-pad capture in Viewer mode.
 - `Show shortcut hints` (boolean, default `true`): show/hide the shortcuts help text in the toolbar.
 - `Enable keyboard shortcuts` (boolean, default `true`): enable/disable shortcut handling in the editor.
 - `Show field properties` (boolean, default `true`): show/hide the right-side field properties panel.
+- `Show palette section` / `Show fields section` / `Show pages section` (booleans, default `true`): control each left sidebar section independently.
+- Field property visibility toggles (booleans, default `true`): hide/show each row in the Field properties card:
+  - `Key`, `Label`, `Show label toggle`, `Type`, `Page`, `Position`, `Size`, `Font size`, `Alignment`, `Required`, `Duplicate button`, `Delete button`.
+- `Save button text` (string, optional): custom toolbar text for the save action button (defaults to `Save JSON`).
+- `View mode` (enumeration): `Designer` (full template editor) or `Viewer` (read/fill mode with interactive overlay fields, including mouse/touch signature capture).
+- `Output PDF mode` (enumeration): `Flattened content` (default) or `AcroForm fields`.
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
 - `On save`: optional microflow to commit the updated TemplateJson.
 
@@ -94,6 +101,8 @@ Use this when `Field key source = Dropdown from JSON`.
   "fields": [
     {
       "key": "clientName",
+      "label": "Client Name",
+      "showLabel": true,
       "type": "text|checkbox|date|signature",
       "page": 0,
       "x": 100,
@@ -104,13 +113,27 @@ Use this when `Field key source = Dropdown from JSON`.
       "align": "left|center|right"
     }
   ],
-  "meta": { "units": "pt", "createdWith": "pdftemplatedesigner" }
+  "meta": {
+    "units": "pt",
+    "createdWith": "pdftemplatedesigner",
+    "outputMode": "flattened|acroform"
+  }
 }
 ```
 
 **Coordinate system**
 - The widget stores `x`, `y`, `w`, `h` in PDF points (1/72 inch) using a **top-left origin**.
 - The Java action converts to the PDF bottom-left origin (`pdfY = pageHeight - y - h`).
+
+**Output modes**
+- `flattened`: Java action draws final text/marks directly on the page content.
+  - If a field has `"showLabel": true`, its `label` (or fallback to `key`) is also rendered.
+- `acroform`: Java action creates interactive form fields (`text`, `date`, `checkbox`, `signature`) using the same template coordinates.
+
+**Viewer mode**
+- When `View mode = Viewer`, the widget renders the linked document with the same canvas engine and overlays interactive controls for your template fields.
+- `text` and `date` fields are editable inputs, `checkbox` fields are clickable, and `signature` fields use a custom mouse/touch canvas.
+- Signature controls include `Clear signature` and optional `Use SigWeb` (when `SigWeb script URL` is configured and a supported SigWeb capture function is available).
 
 **PDF.js worker**
 - The widget loads PDF.js from `window.pdfjsLib` when present.

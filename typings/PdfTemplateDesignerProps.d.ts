@@ -17,6 +17,10 @@ export interface DataSourceType {
 
 export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
+export type ViewModeEnum = "designer" | "viewer";
+
+export type OutputPdfModeEnum = "flattened" | "acroform";
+
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
     basePdfOptionsSource: {} | { caption: string } | { type: string } | null;
@@ -37,9 +41,28 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeyOptionsJson: string;
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
+    sigWebScriptUrl?: DynamicValue<string>;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
     showFieldProperties: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showPagesSection: boolean;
+    showPropertyKey: boolean;
+    showPropertyLabel: boolean;
+    showPropertyShowLabel: boolean;
+    showPropertyType: boolean;
+    showPropertyPage: boolean;
+    showPropertyPosition: boolean;
+    showPropertySize: boolean;
+    showPropertyFontSize: boolean;
+    showPropertyAlignment: boolean;
+    showPropertyRequired: boolean;
+    showPropertyDuplicateAction: boolean;
+    showPropertyDeleteAction: boolean;
+    saveButtonText: string;
+    viewMode: ViewModeEnum;
+    outputPdfMode: OutputPdfModeEnum;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -60,7 +83,26 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeyOptionsJson: string;
     pdfJsWorkerUrl: string;
     pdfJsScriptUrl: string;
+    sigWebScriptUrl: string;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
     showFieldProperties: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showPagesSection: boolean;
+    showPropertyKey: boolean;
+    showPropertyLabel: boolean;
+    showPropertyShowLabel: boolean;
+    showPropertyType: boolean;
+    showPropertyPage: boolean;
+    showPropertyPosition: boolean;
+    showPropertySize: boolean;
+    showPropertyFontSize: boolean;
+    showPropertyAlignment: boolean;
+    showPropertyRequired: boolean;
+    showPropertyDuplicateAction: boolean;
+    showPropertyDeleteAction: boolean;
+    saveButtonText: string;
+    viewMode: ViewModeEnum;
+    outputPdfMode: OutputPdfModeEnum;
 }

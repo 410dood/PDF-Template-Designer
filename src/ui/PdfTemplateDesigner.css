@@ -33,6 +33,14 @@
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
+.pdf-template-designer__layout--no-sidebar {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.pdf-template-designer__layout--no-sidebar.pdf-template-designer__layout--no-properties {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .pdf-template-designer__sidebar,
 .pdf-template-designer__properties {
   background: var(--pd-panel);
@@ -55,7 +63,7 @@
 
 .pdf-template-designer__toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
@@ -70,7 +78,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.pdf-template-designer__toolbar-group:first-child {
+  flex: 1 1 auto;
+}
+
+.pdf-template-designer__toolbar .pdf-template-designer__status {
+  white-space: nowrap;
 }
 
 .pdf-template-designer__viewer {
@@ -81,6 +98,23 @@
   flex: 1;
   overflow: auto;
   position: relative;
+}
+
+.pdf-template-designer__viewer-only {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--pd-border);
+  border-radius: 14px;
+  box-shadow: var(--pd-shadow);
+  padding: 10px;
+  min-height: 560px;
+}
+
+.pdf-template-designer__document-frame {
+  width: 100%;
+  min-height: 540px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .pdf-template-designer__page {
@@ -107,6 +141,10 @@
 .pdf-template-designer__overlay {
   position: absolute;
   inset: 0;
+}
+
+.pdf-template-designer__overlay--viewer {
+  pointer-events: auto;
 }
 
 .pdf-template-designer__overlay--placing {
@@ -192,6 +230,12 @@
   border-style: dashed;
 }
 
+.pdf-template-designer__button--compact {
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
 .pdf-template-designer__field-list {
   display: grid;
   gap: 6px;
@@ -222,14 +266,15 @@
   border: 1px solid rgba(31, 35, 48, 0.35);
   background: rgba(255, 255, 255, 0.7);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 0;
   font-size: 11px;
   color: var(--pd-ink);
   cursor: move;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 6px;
+  overflow: visible;
 }
 
 .pdf-template-designer__field.is-selected {
@@ -258,6 +303,104 @@
   max-width: 120px;
 }
 
+.pdf-template-designer__field-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+}
+
+.pdf-template-designer__overlay--acroform .pdf-template-designer__field {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 3px;
+  border-color: rgba(17, 24, 39, 0.5);
+}
+
+.pdf-template-designer__overlay--acroform .pdf-template-designer__field--checkbox,
+.pdf-template-designer__overlay--acroform .pdf-template-designer__field--date,
+.pdf-template-designer__overlay--acroform .pdf-template-designer__field--signature {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.pdf-template-designer__acro-input {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(107, 114, 128, 0.7);
+  border-radius: 2px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.pdf-template-designer__acro-input--date {
+  position: relative;
+  padding-right: 40px;
+}
+
+.pdf-template-designer__acro-input--date::after {
+  content: "[date]";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--pd-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.pdf-template-designer__acro-input-text {
+  width: 100%;
+  min-width: 0;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-template-designer__acro-checkbox {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-template-designer__acro-checkbox-box {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(17, 24, 39, 0.6);
+  background: #fff;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.pdf-template-designer__acro-signature {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.pdf-template-designer__acro-signature-line {
+  width: 100%;
+  border-top: 1px solid rgba(17, 24, 39, 0.65);
+}
+
+.pdf-template-designer__acro-signature-text {
+  width: 100%;
+  min-width: 0;
+  color: var(--pd-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .pdf-template-designer__resize-handle {
   width: 10px;
   height: 10px;
@@ -266,6 +409,72 @@
   cursor: se-resize;
   align-self: flex-end;
   flex: 0 0 auto;
+  margin: 3px;
+}
+
+.pdf-template-designer__viewer-field {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(31, 35, 48, 0.45);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: hidden;
+}
+
+.pdf-template-designer__viewer-field--signature {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.pdf-template-designer__viewer-field.is-active {
+  border-color: var(--pd-accent);
+  box-shadow: 0 0 0 2px rgba(239, 91, 37, 0.2);
+}
+
+.pdf-template-designer__viewer-input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0 6px;
+  background: transparent;
+  color: #111827;
+}
+
+.pdf-template-designer__viewer-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(239, 91, 37, 0.22);
+}
+
+.pdf-template-designer__viewer-checkbox {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: #111827;
+}
+
+.pdf-template-designer__viewer-checkbox input {
+  margin: 0;
+}
+
+.pdf-template-designer__signature-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  background: rgba(255, 255, 255, 0.98);
+  cursor: crosshair;
+}
+
+.pdf-template-designer__signature-actions {
+  position: absolute;
+  display: inline-flex;
+  gap: 6px;
+  z-index: 5;
 }
 
 .pdf-template-designer__form {
@@ -410,6 +619,15 @@
 }
 
 @media (max-width: 1100px) {
+  .pdf-template-designer__toolbar {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .pdf-template-designer__toolbar-group {
+    flex-wrap: wrap;
+  }
+
   .pdf-template-designer__layout {
     grid-template-columns: 200px minmax(0, 1fr);
   }

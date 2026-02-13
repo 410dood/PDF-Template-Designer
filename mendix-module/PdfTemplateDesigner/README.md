@@ -25,8 +25,9 @@
    - Inputs: `<BusinessObject>`, `PdfTemplateDefinition`
    - Steps:
      - Build `dataJson` from the business object (e.g., with a microflow or export mapping).
-     - Call `GenerateFlattenedPdf(basePdf, templateJson, dataJson)`.
-     - Create `PdfGeneratedDocument`, store bytes, set associations, commit.
+     - Create `PdfGeneratedDocument` (or any `System.FileDocument` specialization) as target output.
+     - Call `GenerateFlattenedPdf(basePdf, templateJson, dataJson, outputFileDocument)` to write output directly.
+     - Set associations and commit.
 
 **Template JSON (definition)**
 The designer widget produces a **template definition JSON** that describes field positions on the PDF.
@@ -37,6 +38,7 @@ The designer widget produces a **template definition JSON** that describes field
     {
       "key": "clientName",
       "label": "Client name",
+      "showLabel": true,
       "type": "text",
       "page": 0,
       "x": 100,
@@ -45,10 +47,15 @@ The designer widget produces a **template definition JSON** that describes field
       "h": 18,
       "fontSize": 10,
       "align": "left",
-      "required": true
+      "required": true,
+      "format": "MM/dd/yyyy"
     }
   ],
-  "meta": { "units": "pt", "createdWith": "pdftemplatedesigner" }
+  "meta": {
+    "units": "pt",
+    "createdWith": "pdftemplatedesigner",
+    "outputMode": "flattened|acroform"
+  }
 }
 ```
 **Field mapping notes**
@@ -56,6 +63,22 @@ The designer widget produces a **template definition JSON** that describes field
 - `x`, `y`, `w`, `h` are **PDF points** (1/72 inch), **top-left origin**.
 - `type` values: `text`, `checkbox`, `date`, `signature`.
 - `align` values: `left`, `center`, `right`.
+- Optional `format` (for `date` type): Java date format pattern used in generation, default `MM/dd/yyyy`.
+- Optional `showLabel` (Boolean, default `true`): when `outputMode = flattened`, renders label text in the output.
+
+**Template JSON output mode**
+Add `meta.outputMode` to control backend output behavior:
+- `flattened` (default): writes static content directly on pages.
+- `acroform`: creates interactive form fields in the output PDF.
+
+Example:
+```json
+"meta": {
+  "units": "pt",
+  "createdWith": "pdftemplatedesigner",
+  "outputMode": "acroform"
+}
+```
 
 **Fixed key options JSON (widget config)**
 If you set widget property `Field key source = Dropdown from JSON`, you can paste this in `Field key options JSON`:
@@ -90,18 +113,22 @@ The Java action expects a **data JSON** object where keys match template field `
 ```
 **Data mapping notes**
 - Values are simple scalars (string/number/boolean). Strings are rendered for `text`, `date`, `signature`.
-- `checkbox` expects boolean-like values (`true`/`false`); any truthy string (e.g., `"true"`) can be normalized in Java.
+- `checkbox` accepts boolean-like values such as `true/false`, `1/0`, `yes/no`, `on/off`, `checked/unchecked`, `y/n`, and numeric values.
+- `date` supports ISO strings like `2022-11-07T05:00:00.000Z` and can be formatted with field `format` (for example `MM/dd/yyyy`).
 - If a key is missing, the field is left blank.
 
 **End-to-end example**
 1. Template JSON field keys: `clientName`, `clientDOB`, `acceptTerms`, `signerName`.
 2. `dataJson` supplies those keys for the business object at generation time.
-3. `GenerateFlattenedPdf` writes values directly onto the base PDF and flattens the result.
+3. `GenerateFlattenedPdf` either:
+   - writes values directly onto the base PDF (`outputMode = flattened`), or
+   - creates interactive AcroForm fields (`outputMode = acroform`).
 
 **Pages**
 - Template Admin page
   - Data view on `PdfTemplateDefinition`
   - Place the `PdfTemplateDesigner` widget
+  - Use widget `View mode = Designer` for template configuration or `View mode = Viewer` for end-user document preview/fill.
   - Include a toolbar with Save and Activate actions
 - Template List page
   - Data grid on `PdfTemplateDefinition`
@@ -113,10 +140,18 @@ The Java action expects a **data JSON** object where keys match template field `
 - Keep exactly one active definition per template name with a simple validation microflow.
 
 **Java action**
-- See `javasource/PdfTemplateDesigner/actions/GenerateFlattenedPdf.java`.
+- See `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java`.
+- Recommended action signature:
+  - Input: `basePdf` (`System.FileDocument`)
+  - Input: `templateJson` (`String`)
+  - Input: `dataJson` (`String`)
+  - Input (optional): `outputFileDocument` (`System.FileDocument`, any specialization)
+  - Return: `String`/`Boolean`/`Nothing` or `Binary` based on your module preference. Current implementation still returns `byte[]` and also writes to `outputFileDocument` when provided.
 - The action can treat the base FileDocument as either:
   - a normal PDF, or
   - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
+- For `outputMode = acroform`, field values from `dataJson` are written into the created AcroForm fields.
+- In `outputMode = acroform`, generation now validates template field config and fails fast for unsupported field types or invalid key/page/size/align.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.
 - In module settings for `PdfTemplateDesigner`, add Java dependencies:
   - `org.apache.pdfbox:pdfbox:2.0.35`

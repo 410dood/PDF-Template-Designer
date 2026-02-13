@@ -5,10 +5,10 @@
     <name>PDF Template Designer</name>
     <description>Design PDF templates by placing overlay fields on top of a base PDF.</description>
     <properties>
-        <property key="dataSource" type="object" isList="true" required="true">
+        <property key="dataSource" type="object" isList="true" required="false">
             <caption>Template definition</caption>
             <category>Data</category>
-            <description>Context object for PdfTemplateDefinition (place the widget inside a Data view).</description>
+            <description>Context object for PdfTemplateDefinition. Required in Designer mode; optional in Viewer mode.</description>
             <properties>
                 <property key="templateJsonAttr" type="attribute" required="true">
                     <caption>Template JSON</caption>
@@ -92,6 +92,12 @@
             <description>Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.</description>
         </property>
 
+        <property key="sigWebScriptUrl" type="textTemplate" required="false">
+            <caption>SigWeb script URL</caption>
+            <category>Advanced</category>
+            <description>Optional URL to SigWebTablet.js for external signature pad integration in Viewer mode.</description>
+        </property>
+
         <property key="showShortcutHints" type="boolean" defaultValue="true" required="true">
             <caption>Show shortcut hints</caption>
             <category>Behavior</category>
@@ -108,6 +114,122 @@
             <caption>Show field properties</caption>
             <category>Behavior</category>
             <description>Show or hide the right-side Field properties card.</description>
+        </property>
+
+        <property key="showPaletteSection" type="boolean" defaultValue="true" required="true">
+            <caption>Show palette section</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Palette section in the left sidebar.</description>
+        </property>
+
+        <property key="showFieldsSection" type="boolean" defaultValue="true" required="true">
+            <caption>Show fields section</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Fields list section in the left sidebar.</description>
+        </property>
+
+        <property key="showPagesSection" type="boolean" defaultValue="true" required="true">
+            <caption>Show pages section</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Pages thumbnail section in the left sidebar.</description>
+        </property>
+
+        <property key="showPropertyKey" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Key</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Key editor in Field properties.</description>
+        </property>
+
+        <property key="showPropertyLabel" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Label</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Label editor in Field properties.</description>
+        </property>
+
+        <property key="showPropertyShowLabel" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Show label toggle</caption>
+            <category>Configuration</category>
+            <description>Show or hide the flattened output label visibility toggle.</description>
+        </property>
+
+        <property key="showPropertyType" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Type</caption>
+            <category>Configuration</category>
+            <description>Show or hide the field Type selector in Field properties.</description>
+        </property>
+
+        <property key="showPropertyPage" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Page</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Page editor in Field properties.</description>
+        </property>
+
+        <property key="showPropertyPosition" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Position</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Position (x, y) editors in Field properties.</description>
+        </property>
+
+        <property key="showPropertySize" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Size</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Size (w, h) editors in Field properties.</description>
+        </property>
+
+        <property key="showPropertyFontSize" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Font size</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Font size editor in Field properties.</description>
+        </property>
+
+        <property key="showPropertyAlignment" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Alignment</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Alignment selector in Field properties.</description>
+        </property>
+
+        <property key="showPropertyRequired" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Required</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Required toggle in Field properties.</description>
+        </property>
+
+        <property key="showPropertyDuplicateAction" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Duplicate button</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Duplicate field button in Field properties.</description>
+        </property>
+
+        <property key="showPropertyDeleteAction" type="boolean" defaultValue="true" required="true">
+            <caption>Show property: Delete button</caption>
+            <category>Configuration</category>
+            <description>Show or hide the Delete field button in Field properties.</description>
+        </property>
+
+        <property key="saveButtonText" type="string" required="false">
+            <caption>Save button text</caption>
+            <category>Configuration</category>
+            <description>Custom text for the Save button in the toolbar. Leave empty to use 'Save JSON'.</description>
+        </property>
+
+        <property key="viewMode" type="enumeration" defaultValue="designer" required="true">
+            <caption>View mode</caption>
+            <category>Data</category>
+            <description>Choose between full template designer mode and viewer mode (native PDF preview with AcroForm input when supported by the browser).</description>
+            <enumerationValues>
+                <enumerationValue key="designer">Designer</enumerationValue>
+                <enumerationValue key="viewer">Viewer</enumerationValue>
+            </enumerationValues>
+        </property>
+
+        <property key="outputPdfMode" type="enumeration" defaultValue="flattened" required="true">
+            <caption>Output PDF mode</caption>
+            <category>Behavior</category>
+            <description>Choose whether generation writes flattened static content or creates interactive AcroForm fields.</description>
+            <enumerationValues>
+                <enumerationValue key="flattened">Flattened content</enumerationValue>
+                <enumerationValue key="acroform">AcroForm fields</enumerationValue>
+            </enumerationValues>
         </property>
 
         <systemProperty key="Editability" />

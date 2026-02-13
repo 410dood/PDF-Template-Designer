@@ -7,6 +7,8 @@ import { PdfTemplateDesignerContainerProps } from "../typings/PdfTemplateDesigne
 type FieldType = "text" | "checkbox" | "date" | "signature";
 type FieldAlign = "left" | "center" | "right";
 type FieldKeySourceMode = "manual" | "datasource" | "json";
+type TemplateOutputMode = "flattened" | "acroform";
+type ViewMode = "designer" | "viewer";
 
 interface KeyOption {
   value: string;
@@ -17,6 +19,7 @@ interface KeyOption {
 interface TemplateField {
   key: string;
   label: string;
+  showLabel: boolean;
   type: FieldType;
   page: number;
   x: number;
@@ -31,7 +34,7 @@ interface TemplateField {
 interface TemplateDefinition {
   basePdf?: { fileId?: string };
   fields: TemplateField[];
-  meta: { units: "pt"; createdWith: string };
+  meta: { units: "pt"; createdWith: string; outputMode: TemplateOutputMode };
 }
 
 interface PdfjsViewport {
@@ -78,14 +81,31 @@ interface GuideLine {
   value: number;
 }
 
+type ViewerFieldValue = string | boolean;
+
+interface InlineSignatureCanvasProps {
+  value?: string;
+  width: number;
+  height: number;
+  onChange: (value: string) => void;
+  onFocus?: () => void;
+}
+
 const DEFAULT_PAGE_SIZE: PageSize = { width: 612, height: 792 };
 const SNAP_SIZE = 5;
-const PDFJS_VERSION = "3.11.174";
-const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js`;
-const PDFJS_WORKER_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
+const PDFJS_VERSION = "4.8.69";
+const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`;
+const PDFJS_WORKER_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
+const PDFJS_AMD_MODULE_IDS = [
+  "pdfjs-dist/build/pdf",
+  "pdfjs-dist/build/pdf.mjs",
+  "pdfjs-dist/legacy/build/pdf",
+  "pdfjs-dist/legacy/build/pdf.mjs"
+];
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
 const PALETTE_DRAG_TYPE = "application/x-pdf-field-type";
+const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = ["GetSigImageB64", "GetSigImageBase64", "GetSigImage"];
 let pdfjsLoader: Promise<PdfjsApi> | null = null;
 
 const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSize" | "align">> = {
@@ -110,6 +130,14 @@ function isAlign(value: unknown): value is FieldAlign {
 
 function isFieldKeySourceMode(value: unknown): value is FieldKeySourceMode {
   return value === "manual" || value === "datasource" || value === "json";
+}
+
+function isTemplateOutputMode(value: unknown): value is TemplateOutputMode {
+  return value === "flattened" || value === "acroform";
+}
+
+function isViewMode(value: unknown): value is ViewMode {
+  return value === "designer" || value === "viewer";
 }
 
 function normalizeStatus(value: unknown): "available" | "loading" | "unavailable" {
@@ -213,6 +241,7 @@ function normalizeField(input: any, index: number): TemplateField {
   const defaults = FIELD_DEFAULTS[type];
   const key = typeof input?.key === "string" && input.key.trim().length > 0 ? input.key.trim() : `field_${index + 1}`;
   const label = typeof input?.label === "string" ? input.label : "";
+  const showLabel = input?.showLabel !== false;
   const page = Math.max(0, Math.floor(toNumber(input?.page, 0)));
   const x = Math.max(0, toNumber(input?.x, 48));
   const y = Math.max(0, toNumber(input?.y, 48));
@@ -222,7 +251,7 @@ function normalizeField(input: any, index: number): TemplateField {
   const align = isAlign(input?.align) ? input.align : defaults.align;
   const required = Boolean(input?.required);
 
-  return { key, label, type, page, x, y, w, h, fontSize, align, required };
+  return { key, label, showLabel, type, page, x, y, w, h, fontSize, align, required };
 }
 
 function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: string } {
@@ -242,11 +271,11 @@ function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: st
   }
 }
 
-function buildTemplateJson(fields: TemplateField[], basePdfId?: string): string {
+function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefined, outputMode: TemplateOutputMode): string {
   const payload: TemplateDefinition = {
     basePdf: basePdfId ? { fileId: basePdfId } : undefined,
     fields: fields.map(field => ({ ...field })),
-    meta: { units: "pt", createdWith: "pdftemplatedesigner" }
+    meta: { units: "pt", createdWith: "pdftemplatedesigner", outputMode }
   };
 
   return JSON.stringify(payload, null, 2);
@@ -291,6 +320,7 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
     if (
       a.key !== b.key ||
       a.label !== b.label ||
+      a.showLabel !== b.showLabel ||
       a.type !== b.type ||
       a.page !== b.page ||
       a.x !== b.x ||
@@ -448,19 +478,37 @@ function resolvePdfjsFromAmd(): Promise<PdfjsApi | undefined> {
       settled = true;
       resolve(value);
     };
-
-    try {
-      req(
-        ["pdfjs-dist/build/pdf"],
-        (module: unknown) => {
-          const amdLib = (module as any)?.default || module;
-          finish(amdLib as PdfjsApi | undefined);
-        },
-        () => finish(undefined)
-      );
-    } catch (_error) {
-      finish(undefined);
-    }
+    const moduleIds = Array.from(new Set(PDFJS_AMD_MODULE_IDS));
+    const tryLoadModule = (index: number) => {
+      if (settled) {
+        return;
+      }
+      if (index >= moduleIds.length) {
+        finish(undefined);
+        return;
+      }
+      try {
+        req(
+          [moduleIds[index]],
+          (module: unknown) => {
+            const amdLib = ((module as any)?.default || module) as PdfjsApi | undefined;
+            const version = (amdLib as any)?.version;
+            if (typeof version === "string" && version !== PDFJS_VERSION) {
+              console.warn(
+                `Ignoring AMD PDF.js module '${moduleIds[index]}' because version '${version}' does not match expected '${PDFJS_VERSION}'.`
+              );
+              tryLoadModule(index + 1);
+              return;
+            }
+            finish(amdLib);
+          },
+          () => tryLoadModule(index + 1)
+        );
+      } catch (_error) {
+        tryLoadModule(index + 1);
+      }
+    };
+    tryLoadModule(0);
 
     // Avoid hanging if AMD never resolves.
     setTimeout(() => finish(undefined), 2000);
@@ -481,6 +529,325 @@ function deriveWorkerUrlFromScriptUrl(scriptUrl?: string): string | undefined {
   }
   const derived = scriptUrl.replace(/pdf(\.min)?\.(m?js)(?=([?#]|$))/i, "pdf.worker$1.$2");
   return derived !== scriptUrl ? derived : undefined;
+}
+
+function loadExternalScript(scriptSrc: string): Promise<void> {
+  if (typeof document === "undefined") {
+    return Promise.reject(new Error("Document is not available."));
+  }
+
+  const existing = document.querySelector(`script[src="${scriptSrc}"]`) as HTMLScriptElement | null;
+  if (existing) {
+    if ((existing as any).dataset?.loaded === "true") {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const handleLoad = () => {
+        existing.removeEventListener("load", handleLoad);
+        existing.removeEventListener("error", handleError);
+        resolve();
+      };
+      const handleError = () => {
+        existing.removeEventListener("load", handleLoad);
+        existing.removeEventListener("error", handleError);
+        reject(new Error(`Failed to load script from ${scriptSrc}.`));
+      };
+      existing.addEventListener("load", handleLoad);
+      existing.addEventListener("error", handleError);
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = scriptSrc;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load script from ${scriptSrc}.`));
+    document.head.appendChild(script);
+  });
+}
+
+type SigWebCaptureFunction = (...args: unknown[]) => unknown;
+
+function resolveSigWebCaptureFunction(globalObject: any): SigWebCaptureFunction | undefined {
+  for (const functionName of SIGWEB_CAPTURE_FUNCTION_CANDIDATES) {
+    const candidate = globalObject?.[functionName];
+    if (typeof candidate === "function") {
+      return candidate.bind(globalObject);
+    }
+  }
+  return undefined;
+}
+
+function extractStringFromUnknown(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const candidateKeys = ["value", "dataUrl", "imageData", "signature", "result", "data"];
+  for (const key of candidateKeys) {
+    const extracted = extractStringFromUnknown(record[key]);
+    if (extracted) {
+      return extracted;
+    }
+  }
+  return undefined;
+}
+
+function normalizeSignatureImageDataUrl(value: string): string | undefined {
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!trimmed) {
+    return undefined;
+  }
+  if (/^data:image\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^image\/\w+;base64,/i.test(trimmed)) {
+    return `data:${trimmed}`;
+  }
+
+  const commaIndex = trimmed.indexOf(",");
+  const candidateBase64 = commaIndex >= 0 && /base64/i.test(trimmed.slice(0, commaIndex))
+    ? trimmed.slice(commaIndex + 1)
+    : trimmed;
+  const normalizedBase64 = candidateBase64.replace(/\s+/g, "");
+  if (/^[A-Za-z0-9+/=]+$/.test(normalizedBase64)) {
+    return `data:image/png;base64,${normalizedBase64}`;
+  }
+  return undefined;
+}
+
+function normalizeSignatureImageFromUnknown(value: unknown): string | undefined {
+  const extracted = extractStringFromUnknown(value);
+  return extracted ? normalizeSignatureImageDataUrl(extracted) : undefined;
+}
+
+function getSigWebPointCount(globalObject: any): number | undefined {
+  const numberOfPointsFn = globalObject?.NumberOfTabletPoints;
+  if (typeof numberOfPointsFn !== "function") {
+    return undefined;
+  }
+  try {
+    const value = Number(numberOfPointsFn());
+    return Number.isFinite(value) ? value : undefined;
+  } catch (_error) {
+    return undefined;
+  }
+}
+
+function callOptionalSigWebFunction(globalObject: any, functionName: string, ...args: unknown[]): void {
+  const fn = globalObject?.[functionName];
+  if (typeof fn !== "function") {
+    return;
+  }
+  try {
+    fn(...args);
+  } catch (_error) {
+    // Optional SigWeb tuning helpers vary by device/driver; ignore failures.
+  }
+}
+
+function applySigWebImageDefaults(globalObject: any): void {
+  callOptionalSigWebFunction(globalObject, "SetSigCompressionMode", 1);
+  callOptionalSigWebFunction(globalObject, "SetImageXSize", 500);
+  callOptionalSigWebFunction(globalObject, "SetImageYSize", 120);
+  callOptionalSigWebFunction(globalObject, "SetImagePenWidth", 4);
+}
+
+function captureSignatureFromSigWeb(captureFunction: SigWebCaptureFunction): Promise<string | undefined> {
+  const immediateResult = (() => {
+    try {
+      return normalizeSignatureImageFromUnknown(captureFunction());
+    } catch (_error) {
+      return undefined;
+    }
+  })();
+  if (immediateResult) {
+    return Promise.resolve(immediateResult);
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (result?: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(normalizeSignatureImageFromUnknown(result));
+    };
+
+    const timeoutId = setTimeout(() => finish(undefined), 2000);
+    const callback = (result: unknown) => {
+      clearTimeout(timeoutId);
+      finish(result);
+    };
+
+    try {
+      const result = captureFunction(callback);
+      if (result !== undefined) {
+        clearTimeout(timeoutId);
+        finish(result);
+      }
+    } catch (_error) {
+      clearTimeout(timeoutId);
+      finish(undefined);
+    }
+  });
+}
+
+function normalizeDateInputValue(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return "";
+  }
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFieldValue | undefined): ViewerFieldValue {
+  if (field.type === "checkbox") {
+    return typeof previousValue === "boolean" ? previousValue : false;
+  }
+  return typeof previousValue === "string" ? previousValue : "";
+}
+
+function InlineSignatureCanvas(props: InlineSignatureCanvasProps): ReactElement {
+  const { value, width, height, onChange, onFocus } = props;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const drawValue = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const safeWidth = Math.max(20, Math.round(width));
+    const safeHeight = Math.max(20, Math.round(height));
+    const ratio = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    canvas.width = Math.max(1, Math.round(safeWidth * ratio));
+    canvas.height = Math.max(1, Math.round(safeHeight * ratio));
+    canvas.style.width = `${safeWidth}px`;
+    canvas.style.height = `${safeHeight}px`;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return;
+    }
+
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.scale(ratio, ratio);
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.lineWidth = Math.max(1.5, safeHeight * 0.05);
+    context.strokeStyle = "#111827";
+    context.fillStyle = "#111827";
+
+    if (value) {
+      const image = new Image();
+      image.onload = () => {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return;
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(ratio, ratio);
+        ctx.drawImage(image, 0, 0, safeWidth, safeHeight);
+      };
+      image.src = value;
+    }
+  }, [value, width, height]);
+
+  useEffect(() => {
+    drawValue();
+  }, [drawValue]);
+
+  const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>): { x: number; y: number } => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
+  };
+
+  const commitCurrentStroke = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    onChange(canvas.toDataURL("image/png"));
+  }, [onChange]);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) {
+      return;
+    }
+    onFocus?.();
+    event.preventDefault();
+    event.stopPropagation();
+    canvas.setPointerCapture(event.pointerId);
+    drawingRef.current = true;
+    const point = pointFromEvent(event);
+    lastPointRef.current = point;
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    context.arc(point.x, point.y, Math.max(1, context.lineWidth * 0.45), 0, Math.PI * 2);
+    context.fill();
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) {
+      return;
+    }
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    const lastPoint = lastPointRef.current;
+    if (!canvas || !context || !lastPoint) {
+      return;
+    }
+    event.preventDefault();
+    const point = pointFromEvent(event);
+    context.beginPath();
+    context.moveTo(lastPoint.x, lastPoint.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    lastPointRef.current = point;
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) {
+      return;
+    }
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    event.preventDefault();
+    commitCurrentStroke();
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pdf-template-designer__signature-canvas"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    />
+  );
 }
 
 function loadImageFromBlob(blob: Blob): Promise<LoadedImage> {
@@ -549,6 +916,38 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const showShortcutHints = props.showShortcutHints !== false;
   const enableKeyboardShortcuts = props.enableKeyboardShortcuts !== false;
   const showFieldProperties = props.showFieldProperties !== false;
+  const showPaletteSection = props.showPaletteSection !== false;
+  const showFieldsSection = props.showFieldsSection !== false;
+  const showPagesSection = props.showPagesSection !== false;
+  const showPropertyKey = props.showPropertyKey !== false;
+  const showPropertyLabel = props.showPropertyLabel !== false;
+  const showPropertyShowLabel = props.showPropertyShowLabel !== false;
+  const showPropertyType = props.showPropertyType !== false;
+  const showPropertyPage = props.showPropertyPage !== false;
+  const showPropertyPosition = props.showPropertyPosition !== false;
+  const showPropertySize = props.showPropertySize !== false;
+  const showPropertyFontSize = props.showPropertyFontSize !== false;
+  const showPropertyAlignment = props.showPropertyAlignment !== false;
+  const showPropertyRequired = props.showPropertyRequired !== false;
+  const showPropertyDuplicateAction = props.showPropertyDuplicateAction !== false;
+  const showPropertyDeleteAction = props.showPropertyDeleteAction !== false;
+  const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
+  const viewMode: ViewMode = isViewMode((props as any).viewMode) ? ((props as any).viewMode as ViewMode) : "designer";
+  const isViewerMode = viewMode === "viewer";
+  const hasSidebarSections = showPaletteSection || showFieldsSection || showPagesSection;
+  const hasVisibleFieldPropertyControls =
+    showPropertyKey ||
+    showPropertyLabel ||
+    showPropertyShowLabel ||
+    showPropertyType ||
+    showPropertyPage ||
+    showPropertyPosition ||
+    showPropertySize ||
+    showPropertyFontSize ||
+    showPropertyAlignment ||
+    showPropertyRequired ||
+    showPropertyDuplicateAction ||
+    showPropertyDeleteAction;
   const viewerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -575,6 +974,11 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const [renderError, setRenderError] = useState<string | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [viewerFieldValues, setViewerFieldValues] = useState<Record<string, ViewerFieldValue>>({});
+  const [activeViewerSignatureKey, setActiveViewerSignatureKey] = useState<string | null>(null);
+  const [viewerSignatureMessage, setViewerSignatureMessage] = useState<string | null>(null);
+  const [sigWebState, setSigWebState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [sigWebError, setSigWebError] = useState<string | null>(null);
   const [pageThumbs, setPageThumbs] = useState<Record<number, string>>({});
   const [isBuildingThumbs, setIsBuildingThumbs] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState("1");
@@ -583,6 +987,9 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
     ? props.fieldKeySourceMode
     : "manual";
+  const outputPdfMode: TemplateOutputMode = isTemplateOutputMode(props.outputPdfMode)
+    ? props.outputPdfMode
+    : "flattened";
   const fieldKeyOptionsSource = props.fieldKeyOptionsSource;
   const fieldKeyOptionAttribute = props.fieldKeyOptionAttribute;
   const fieldKeyOptionsJson = props.fieldKeyOptionsJson || "";
@@ -619,13 +1026,22 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     [(props as any).pdfJsScriptUrl]
   );
   const configuredScriptUrl = scriptUrlResolution.value;
+  const sigWebUrlResolution = useMemo(
+    () => resolveTextTemplateValue((props as any).sigWebScriptUrl),
+    [(props as any).sigWebScriptUrl]
+  );
+  const configuredSigWebUrl = sigWebUrlResolution.value;
+  const existingPdfjsLib = (typeof window !== "undefined" ? (window as any).pdfjsLib : undefined) as PdfjsApi | undefined;
   const derivedScriptUrl = deriveScriptUrlFromWorkerUrl(configuredWorkerUrl);
-  const defaultScriptUrl = resolveWorkerUrlValue((window as any).pdfjsScriptSrc) || derivedScriptUrl || PDFJS_CDN;
-  const resolvedScriptUrl = configuredScriptUrl || defaultScriptUrl;
+  const explicitScriptUrl =
+    configuredScriptUrl || resolveWorkerUrlValue((window as any).pdfjsScriptSrc) || derivedScriptUrl;
+  const resolvedScriptUrl = explicitScriptUrl || (!existingPdfjsLib ? PDFJS_CDN : undefined);
+  const existingWorkerUrl = resolveWorkerUrlValue((existingPdfjsLib as any)?.GlobalWorkerOptions?.workerSrc);
   const defaultWorkerUrl =
     resolveWorkerUrlValue((window as any).pdfjsWorkerSrc) ||
+    existingWorkerUrl ||
     deriveWorkerUrlFromScriptUrl(resolvedScriptUrl) ||
-    PDFJS_WORKER_CDN;
+    (!existingPdfjsLib ? PDFJS_WORKER_CDN : undefined);
   const resolvedWorkerUrl = configuredWorkerUrl || defaultWorkerUrl;
   const isPdfJsConfigLoading = workerUrlResolution.isLoading || scriptUrlResolution.isLoading;
 
@@ -643,6 +1059,58 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       })
       .catch(() => undefined);
   }, [isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isViewerMode) {
+      setSigWebState("idle");
+      setSigWebError(null);
+      return;
+    }
+
+    if (sigWebUrlResolution.isLoading) {
+      setSigWebState("loading");
+      setSigWebError(null);
+      return;
+    }
+
+    const existingCaptureFunction = resolveSigWebCaptureFunction(window as any);
+    if (!configuredSigWebUrl) {
+      setSigWebState(existingCaptureFunction ? "ready" : "idle");
+      setSigWebError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSigWebState("loading");
+    setSigWebError(null);
+    loadExternalScript(configuredSigWebUrl)
+      .then(() => {
+        if (cancelled) {
+          return;
+        }
+        const captureFunction = resolveSigWebCaptureFunction(window as any);
+        if (!captureFunction) {
+          setSigWebState("error");
+          setSigWebError(
+            "SigWeb loaded, but no supported capture function was found. Expected GetSigImageB64, GetSigImageBase64, or GetSigImage."
+          );
+          return;
+        }
+        setSigWebState("ready");
+        setSigWebError(null);
+      })
+      .catch(error => {
+        if (cancelled) {
+          return;
+        }
+        setSigWebState("error");
+        setSigWebError(error instanceof Error ? error.message : "Failed to load SigWeb script.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isViewerMode, configuredSigWebUrl, sigWebUrlResolution.isLoading]);
 
   const templateJsonValue = useMemo(() => {
     return dataSourceItem?.templateJsonAttr;
@@ -724,6 +1192,34 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       setSelectedKey(parsed.fields[0].key);
     }
   }, [templateJsonText, templateJsonValue, selectedKey]);
+
+  useEffect(() => {
+    setViewerFieldValues(previousValues => {
+      const nextValues: Record<string, ViewerFieldValue> = {};
+      for (const field of fields) {
+        nextValues[field.key] = initialViewerFieldValue(field, previousValues[field.key]);
+      }
+      const previousKeys = Object.keys(previousValues);
+      const nextKeys = Object.keys(nextValues);
+      if (previousKeys.length === nextKeys.length) {
+        let hasChanged = false;
+        for (const key of nextKeys) {
+          if (previousValues[key] !== nextValues[key]) {
+            hasChanged = true;
+            break;
+          }
+        }
+        if (!hasChanged) {
+          return previousValues;
+        }
+      }
+      return nextValues;
+    });
+
+    setActiveViewerSignatureKey(previousKey =>
+      previousKey && fields.some(field => field.type === "signature" && field.key === previousKey) ? previousKey : null
+    );
+  }, [fields]);
 
   useEffect(() => {
     setPageJumpInput(String(pageIndex + 1));
@@ -968,7 +1464,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       } = {}
     ) => {
       const { runSaveAction = false, runOnChangeAction = true } = options;
-      const payload = buildTemplateJson(nextFields, basePdfId);
+      const payload = buildTemplateJson(nextFields, basePdfId, outputPdfMode);
       lastLoadedJsonRef.current = payload;
 
       const attribute = dataSourceItem?.templateJsonAttr;
@@ -989,7 +1485,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
         runConfiguredAction(dataSourceItem?.onSaveAction);
       }
     },
-    [dataSourceItem, basePdfId, runConfiguredAction]
+    [dataSourceItem, basePdfId, outputPdfMode, runConfiguredAction]
   );
 
   const pushUndoSnapshot = useCallback((snapshot?: TemplateField[]) => {
@@ -1035,6 +1531,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       return {
         key,
         label: "",
+        showLabel: true,
         type,
         page: pageIndex,
         x: snappedX,
@@ -1390,7 +1887,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   );
 
   useEffect(() => {
-    if (!enableKeyboardShortcuts) {
+    if (isViewerMode || !enableKeyboardShortcuts) {
       return;
     }
 
@@ -1466,11 +1963,72 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enableKeyboardShortcuts, undo, redo, duplicateSelectedField, deleteField, nudgeSelectedField]);
+  }, [isViewerMode, enableKeyboardShortcuts, undo, redo, duplicateSelectedField, deleteField, nudgeSelectedField]);
 
   const handleSaveClick = useCallback(() => {
     commitTemplate(fieldsRef.current, { runSaveAction: true, runOnChangeAction: false });
   }, [commitTemplate]);
+
+  const setViewerFieldValue = useCallback((fieldKey: string, value: ViewerFieldValue) => {
+    setViewerFieldValues(previousValues => {
+      if (previousValues[fieldKey] === value) {
+        return previousValues;
+      }
+      return { ...previousValues, [fieldKey]: value };
+    });
+  }, []);
+
+  const clearViewerSignature = useCallback(
+    (fieldKey: string) => {
+      setViewerFieldValue(fieldKey, "");
+      setViewerSignatureMessage(null);
+    },
+    [setViewerFieldValue]
+  );
+
+  const importSignatureFromSigWeb = useCallback(
+    async (fieldKey: string) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const globalObject = window as any;
+      const captureFunction = resolveSigWebCaptureFunction(globalObject);
+      if (!captureFunction) {
+        setViewerSignatureMessage(
+          "SigWeb capture function was not found. Verify that SigWebTablet.js is loaded and the pad service is available."
+        );
+        return;
+      }
+
+      const pointCountBeforeCapture = getSigWebPointCount(globalObject);
+      if (pointCountBeforeCapture !== undefined && pointCountBeforeCapture <= 0) {
+        setViewerSignatureMessage("No pen strokes were detected on the signature pad. Please sign first, then click Use SigWeb.");
+        return;
+      }
+
+      try {
+        applySigWebImageDefaults(globalObject);
+        const normalizedValue = await captureSignatureFromSigWeb(captureFunction);
+        if (!normalizedValue) {
+          const pointCountAfterCapture = getSigWebPointCount(globalObject);
+          if (pointCountAfterCapture !== undefined && pointCountAfterCapture <= 0) {
+            setViewerSignatureMessage("SigWeb reported no captured points. Please sign on the pad and try again.");
+          } else {
+            setViewerSignatureMessage(
+              "SigWeb returned no signature image. Verify SigWebTablet.js is connected to the pad service and try again."
+            );
+          }
+          return;
+        }
+        setViewerFieldValue(fieldKey, normalizedValue);
+        setViewerSignatureMessage(null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown SigWeb error.";
+        setViewerSignatureMessage(`Failed to import signature from SigWeb. ${message}`);
+      }
+    },
+    [setViewerFieldValue]
+  );
 
   const handlePlacementSelect = useCallback((type: FieldType) => {
     setPlacementType(current => (current === type ? null : type));
@@ -1491,11 +2049,224 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   // Template coordinates are stored in PDF points (top-left origin). Multiply by renderScale for canvas pixels.
   const renderWidth = pageSize.width * renderScale;
   const renderHeight = pageSize.height * renderScale;
+  const activeViewerSignatureField = useMemo(
+    () =>
+      fieldsOnPage.find(
+        field => field.type === "signature" && activeViewerSignatureKey !== null && field.key === activeViewerSignatureKey
+      ),
+    [fieldsOnPage, activeViewerSignatureKey]
+  );
 
-  if (!props.dataSource) {
+  const renderViewerFieldControl = useCallback(
+    (field: TemplateField): ReactElement => {
+      if (field.type === "checkbox") {
+        return (
+          <label className="pdf-template-designer__viewer-checkbox">
+            <input
+              type="checkbox"
+              checked={Boolean(viewerFieldValues[field.key])}
+              onChange={event => setViewerFieldValue(field.key, event.target.checked)}
+            />
+            <span>{field.showLabel ? field.label || field.key : ""}</span>
+          </label>
+        );
+      }
+
+      if (field.type === "signature") {
+        const rawSignatureValue = viewerFieldValues[field.key];
+        const signatureValue = typeof rawSignatureValue === "string" ? rawSignatureValue : "";
+        return (
+          <InlineSignatureCanvas
+            width={Math.max(20, field.w * renderScale)}
+            height={Math.max(20, field.h * renderScale)}
+            value={signatureValue}
+            onFocus={() => {
+              setActiveViewerSignatureKey(field.key);
+              setViewerSignatureMessage(null);
+            }}
+            onChange={nextValue => {
+              setViewerFieldValue(field.key, nextValue);
+              setActiveViewerSignatureKey(field.key);
+              setViewerSignatureMessage(null);
+            }}
+          />
+        );
+      }
+
+      const inputStyle = {
+        fontSize: Math.max(10, field.fontSize * renderScale * 0.9),
+        textAlign: field.align
+      } as const;
+      const rawValue = viewerFieldValues[field.key];
+      const value = typeof rawValue === "string" ? rawValue : "";
+
+      if (field.type === "date") {
+        return (
+          <input
+            className="pdf-template-designer__viewer-input"
+            type="date"
+            value={normalizeDateInputValue(value)}
+            style={inputStyle}
+            onChange={event => setViewerFieldValue(field.key, event.target.value)}
+          />
+        );
+      }
+
+      return (
+        <input
+          className="pdf-template-designer__viewer-input"
+          type="text"
+          value={value}
+          style={inputStyle}
+          onChange={event => setViewerFieldValue(field.key, event.target.value)}
+        />
+      );
+    },
+    [viewerFieldValues, renderScale, setViewerFieldValue]
+  );
+
+  if (!props.dataSource && !isViewerMode) {
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
         <div className="pdf-template-designer__alert">Configure a data source for PdfTemplateDefinition.</div>
+      </div>
+    );
+  }
+
+  if (isViewerMode) {
+    return (
+      <div className={className} style={props.style} tabIndex={props.tabIndex}>
+        <div className="pdf-template-designer__canvas">
+          <div className="pdf-template-designer__toolbar">
+            <div className="pdf-template-designer__toolbar-group">
+              <button
+                className="pdf-template-designer__button"
+                onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
+                type="button"
+                disabled={pageIndex === 0}
+              >
+                Prev
+              </button>
+              <div className="pdf-template-designer__status">
+                Page {pageIndex + 1} / {pageCount}
+              </div>
+              <button
+                className="pdf-template-designer__button"
+                onClick={() => setPageIndex(Math.min(pageCount - 1, pageIndex + 1))}
+                type="button"
+                disabled={pageIndex >= pageCount - 1}
+              >
+                Next
+              </button>
+              <div className="pdf-template-designer__toolbar-jump">
+                <input
+                  className="pdf-template-designer__input"
+                  type="number"
+                  min={1}
+                  max={pageCount}
+                  value={pageJumpInput}
+                  onChange={event => setPageJumpInput(event.target.value)}
+                  onBlur={applyPageJump}
+                  onKeyDown={event => {
+                    if (event.key === "Enter") {
+                      applyPageJump();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="pdf-template-designer__toolbar-group">
+              <select
+                className="pdf-template-designer__select"
+                value={zoom}
+                onChange={event => setZoom(Number(event.target.value))}
+              >
+                <option value={0.75}>75%</option>
+                <option value={1}>100%</option>
+                <option value={1.25}>125%</option>
+                <option value={1.5}>150%</option>
+              </select>
+            </div>
+          </div>
+          {sigWebState === "loading" ? (
+            <div className="pdf-template-designer__status">Loading SigWeb integration...</div>
+          ) : null}
+          {sigWebError ? <div className="pdf-template-designer__alert">{sigWebError}</div> : null}
+          {viewerSignatureMessage ? <div className="pdf-template-designer__alert">{viewerSignatureMessage}</div> : null}
+
+          <div className="pdf-template-designer__viewer" ref={viewerRef}>
+            {!basePdfId ? <div className="pdf-template-designer__status">No base PDF linked.</div> : null}
+            {loadingPdf ? <div className="pdf-template-designer__status">Loading document...</div> : null}
+            {renderError ? <div className="pdf-template-designer__alert">{renderError}</div> : null}
+            {hasRenderableDocument ? (
+              <div className="pdf-template-designer__page" style={{ width: renderWidth, height: renderHeight }}>
+                {pdfDoc ? (
+                  <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />
+                ) : imageBackgroundUrl ? (
+                  <img
+                    className="pdf-template-designer__image-surface"
+                    src={imageBackgroundUrl}
+                    alt="Base document"
+                    style={{ width: renderWidth, height: renderHeight }}
+                    draggable={false}
+                  />
+                ) : null}
+                <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
+                  {fieldsOnPage.map(field => (
+                    <div
+                      key={field.key}
+                      className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${field.type}${
+                        activeViewerSignatureKey === field.key ? " is-active" : ""
+                      }`}
+                      style={{
+                        left: field.x * renderScale,
+                        top: field.y * renderScale,
+                        width: field.w * renderScale,
+                        height: field.h * renderScale
+                      }}
+                      onPointerDown={() => {
+                        if (field.type === "signature") {
+                          setActiveViewerSignatureKey(field.key);
+                          setViewerSignatureMessage(null);
+                        } else if (activeViewerSignatureKey) {
+                          setActiveViewerSignatureKey(null);
+                        }
+                      }}
+                    >
+                      {renderViewerFieldControl(field)}
+                    </div>
+                  ))}
+                  {activeViewerSignatureField ? (
+                    <div
+                      className="pdf-template-designer__signature-actions"
+                      style={{
+                        left: activeViewerSignatureField.x * renderScale,
+                        top: (activeViewerSignatureField.y + activeViewerSignatureField.h) * renderScale + 6
+                      }}
+                    >
+                      <button
+                        className="pdf-template-designer__button pdf-template-designer__button--compact"
+                        type="button"
+                        onClick={() => clearViewerSignature(activeViewerSignatureField.key)}
+                      >
+                        Clear signature
+                      </button>
+                      {sigWebState === "ready" ? (
+                        <button
+                          className="pdf-template-designer__button pdf-template-designer__button--compact"
+                          type="button"
+                          onClick={() => importSignatureFromSigWeb(activeViewerSignatureField.key)}
+                        >
+                          Use SigWeb
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
     );
   }
@@ -1508,9 +2279,11 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
       <div
         className={`pdf-template-designer__layout${
           showFieldProperties ? "" : " pdf-template-designer__layout--no-properties"
-        }`}
+        }${hasSidebarSections ? "" : " pdf-template-designer__layout--no-sidebar"}`}
       >
+        {hasSidebarSections ? (
         <aside className="pdf-template-designer__sidebar">
+          {showPaletteSection ? (
           <div>
             <div className="pdf-template-designer__section-title">Palette</div>
             <div className="pdf-template-designer__palette">
@@ -1566,7 +2339,9 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               Click a tool, then click on the PDF to place. Double-click tool for centered insert.
             </div>
           </div>
+          ) : null}
 
+          {showFieldsSection ? (
           <div>
             <div className="pdf-template-designer__section-title">Fields</div>
             <div className="pdf-template-designer__field-list">
@@ -1589,7 +2364,9 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               )}
             </div>
           </div>
+          ) : null}
 
+          {showPagesSection ? (
           <div>
             <div className="pdf-template-designer__section-title">Pages</div>
             <div className="pdf-template-designer__thumb-list">
@@ -1614,7 +2391,9 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               ))}
             </div>
           </div>
+          ) : null}
         </aside>
+        ) : null}
 
         <section className="pdf-template-designer__canvas">
           <div className="pdf-template-designer__toolbar">
@@ -1681,7 +2460,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                 <option value={1.5}>150%</option>
               </select>
               <button className="pdf-template-designer__button pdf-template-designer__button--primary" onClick={handleSaveClick} type="button">
-                Save JSON
+                {saveButtonText}
               </button>
             </div>
           </div>
@@ -1717,6 +2496,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                     snapEnabled ? " pdf-template-designer__overlay--grid" : ""
                   }${placementType ? " pdf-template-designer__overlay--placing" : ""}${
                     guides.length > 0 ? " pdf-template-designer__overlay--guides" : ""
+                  }${outputPdfMode === "acroform" ? " pdf-template-designer__overlay--acroform" : ""
                   }`}
                   ref={overlayRef}
                   onPointerDown={handleOverlayPointerDown}
@@ -1749,7 +2529,37 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                       }}
                       onPointerDown={event => handleFieldPointerDown(event, field, "move")}
                     >
-                      <div className="pdf-template-designer__field-label">{field.label || field.key}</div>
+                      <div className="pdf-template-designer__field-content">
+                        {outputPdfMode === "acroform" ? (
+                          field.type === "checkbox" ? (
+                            <div className="pdf-template-designer__acro-checkbox">
+                              <span className="pdf-template-designer__acro-checkbox-box" />
+                              <span className="pdf-template-designer__field-label">{field.label || field.key || "Checkbox"}</span>
+                            </div>
+                          ) : field.type === "signature" ? (
+                            <div className="pdf-template-designer__acro-signature">
+                              <span className="pdf-template-designer__acro-signature-line" />
+                              <span className="pdf-template-designer__acro-signature-text">
+                                {field.label || field.key || "Sign here"}
+                              </span>
+                            </div>
+                          ) : (
+                            <div
+                              className={`pdf-template-designer__acro-input${
+                                field.type === "date" ? " pdf-template-designer__acro-input--date" : ""
+                              }`}
+                            >
+                              <span className="pdf-template-designer__acro-input-text">
+                                {field.label || field.key || (field.type === "date" ? "MM/DD/YYYY" : "Text field")}
+                              </span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="pdf-template-designer__field-label">
+                            {field.showLabel ? field.label || field.key : selectedKey === field.key ? "(label hidden)" : ""}
+                          </div>
+                        )}
+                      </div>
                       <div
                         className="pdf-template-designer__resize-handle"
                         onPointerDown={event => handleFieldPointerDown(event, field, "resize")}
@@ -1766,7 +2576,9 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
           <aside className="pdf-template-designer__properties">
             <div className="pdf-template-designer__section-title">Field properties</div>
             {selectedField ? (
+              hasVisibleFieldPropertyControls ? (
               <div className="pdf-template-designer__form">
+              {showPropertyKey ? (
               <div>
                 <div className="pdf-template-designer__label">Key</div>
                 {keyInputState.mode === "dropdown" ? (
@@ -1814,6 +2626,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   <div className="pdf-template-designer__alert">{keyInputState.error}</div>
                 ) : null}
               </div>
+              ) : null}
+              {showPropertyLabel ? (
               <div>
                 <div className="pdf-template-designer__label">Label</div>
                 <input
@@ -1822,6 +2636,18 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   onChange={event => updateField(selectedField.key, { label: event.target.value })}
                 />
               </div>
+              ) : null}
+              {showPropertyShowLabel ? (
+              <label className="pdf-template-designer__toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedField.showLabel}
+                  onChange={event => updateField(selectedField.key, { showLabel: event.target.checked })}
+                />
+                Show label in flattened output
+              </label>
+              ) : null}
+              {showPropertyType ? (
               <div>
                 <div className="pdf-template-designer__label">Type</div>
                 <select
@@ -1835,6 +2661,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   <option value="signature">Signature</option>
                 </select>
               </div>
+              ) : null}
+              {showPropertyPage ? (
               <div>
                 <div className="pdf-template-designer__label">Page (1-based)</div>
                 <input
@@ -1849,6 +2677,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   }}
                 />
               </div>
+              ) : null}
+              {showPropertyPosition ? (
               <div>
                 <div className="pdf-template-designer__label">Position (x, y)</div>
                 <input
@@ -1864,6 +2694,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   onChange={event => updateField(selectedField.key, { y: toNumber(event.target.value, selectedField.y) })}
                 />
               </div>
+              ) : null}
+              {showPropertySize ? (
               <div>
                 <div className="pdf-template-designer__label">Size (w, h)</div>
                 <input
@@ -1879,6 +2711,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   onChange={event => updateField(selectedField.key, { h: toNumber(event.target.value, selectedField.h) })}
                 />
               </div>
+              ) : null}
+              {showPropertyFontSize ? (
               <div>
                 <div className="pdf-template-designer__label">Font size</div>
                 <input
@@ -1891,6 +2725,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   }
                 />
               </div>
+              ) : null}
+              {showPropertyAlignment ? (
               <div>
                 <div className="pdf-template-designer__label">Alignment</div>
                 <select
@@ -1903,6 +2739,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                   <option value="right">Right</option>
                 </select>
               </div>
+              ) : null}
+              {showPropertyRequired ? (
               <label className="pdf-template-designer__toggle">
                 <input
                   type="checkbox"
@@ -1911,6 +2749,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
                 />
                 Required
               </label>
+              ) : null}
+              {showPropertyDuplicateAction ? (
               <button
                 className="pdf-template-designer__button"
                 onClick={duplicateSelectedField}
@@ -1918,6 +2758,8 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               >
                 Duplicate field
               </button>
+              ) : null}
+              {showPropertyDeleteAction ? (
               <button
                 className="pdf-template-designer__button"
                 onClick={() => deleteField(selectedField.key)}
@@ -1925,7 +2767,11 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
               >
                 Delete field
               </button>
+              ) : null}
               </div>
+              ) : (
+                <div className="pdf-template-designer__status">All field properties are hidden by widget configuration.</div>
+              )
             ) : (
               <div className="pdf-template-designer__status">Select a field to edit.</div>
             )}
