@@ -57,6 +57,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class GenerateFlattenedPdf extends UserAction<byte[]> {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DEFAULT_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yyyy", Locale.US);
+    private static final DateTimeFormatter DEFAULT_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm", Locale.US);
+    private static final DateTimeFormatter DEFAULT_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm", Locale.US);
 
     private final IMendixObject basePdf;
     private final IMendixObject outputFileDocument;
@@ -87,26 +89,34 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return new byte[0];
         }
 
-        byte[] baseBytes = Core.getFileDocumentContent(getContext(), basePdf);
+        byte[] baseBytes;
+        try (java.io.InputStream sourceStream = Core.getFileDocumentContent(getContext(), basePdf)) {
+            if (sourceStream == null) {
+                throw new IllegalArgumentException("Base PDF file stream is empty.");
+            }
+            baseBytes = readAllBytes(sourceStream);
+        }
         if (baseBytes == null || baseBytes.length == 0) {
             throw new IllegalArgumentException("Base PDF file is empty.");
         }
 
         TemplateDefinition template = TemplateDefinition.fromJson(templateJson);
         Map<String, Object> data = TemplateDefinition.parseDataJson(dataJson);
-
-        if (template == null || template.fields == null || template.fields.isEmpty()) {
-            storeOutputToTargetIfConfigured(baseBytes);
-            return baseBytes;
-        }
+        String outputMode = template == null ? "flattened" : template.getOutputMode(data);
+        boolean hasTemplateFields = template != null && template.fields != null && !template.fields.isEmpty();
 
         byte[] outputBytes;
         try (PDDocument doc = openPdfOrImage(baseBytes)) {
-            if ("acroform".equals(template.getOutputMode(data))) {
-                validateAcroFormConfiguration(doc, template.fields);
-                applyAcroFormFields(doc, template.fields, data);
+            if ("acroform".equals(outputMode)) {
+                if (hasTemplateFields) {
+                    validateAcroFormConfiguration(doc, template.fields);
+                    applyAcroFormFields(doc, template.fields, data);
+                }
             } else {
-                renderFlattenedFields(doc, template.fields, data);
+                if (hasTemplateFields) {
+                    renderFlattenedFields(doc, template.fields, data);
+                }
+                flattenExistingAcroForm(doc);
             }
 
             try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -152,6 +162,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         PDAcroForm acroForm = getOrCreateAcroForm(doc);
         Set<String> usedNames = new HashSet<>();
         boolean hasSignatureField = false;
+        List<PDField> fieldsForAppearanceRefresh = new ArrayList<>();
         for (PDField existingField : acroForm.getFieldTree()) {
             if (existingField != null && existingField.getFullyQualifiedName() != null) {
                 usedNames.add(existingField.getFullyQualifiedName());
@@ -191,8 +202,11 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
 
             acroForm.getFields().add(acroField);
             applyAcroFieldValue(acroField, field, data);
-            if ("signature".equals(normalizeFieldType(field.type))) {
+            String normalizedType = normalizeFieldType(field.type);
+            if ("signature".equals(normalizedType)) {
                 hasSignatureField = true;
+            } else {
+                fieldsForAppearanceRefresh.add(acroField);
             }
         }
 
@@ -201,11 +215,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             // Hint to PDF readers to apply incremental updates for signing.
             acroForm.setAppendOnly(true);
         }
-        try {
-            acroForm.refreshAppearances();
-        } catch (Exception ignored) {
-            // Some readers generate appearances themselves; do not fail generation on refresh issues.
-        }
+        refreshAcroFormAppearances(acroForm, fieldsForAppearanceRefresh);
     }
 
     private static PDAcroForm getOrCreateAcroForm(PDDocument doc) {
@@ -224,7 +234,8 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         if (acroForm.getDefaultAppearance() == null || acroForm.getDefaultAppearance().trim().isEmpty()) {
             acroForm.setDefaultAppearance("/Helv 10 Tf 0 g");
         }
-        acroForm.setNeedAppearances(true);
+        // Generate concrete appearance streams so values render as field values (not hint-like placeholders).
+        acroForm.setNeedAppearances(false);
         return acroForm;
     }
 
@@ -415,6 +426,58 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
     }
 
+    private static void flattenExistingAcroForm(PDDocument doc) throws Exception {
+        if (doc == null || doc.getDocumentCatalog() == null) {
+            return;
+        }
+
+        PDAcroForm acroForm = doc.getDocumentCatalog().getAcroForm();
+        if (acroForm == null) {
+            return;
+        }
+
+        try {
+            acroForm.refreshAppearances();
+        } catch (Exception ignored) {
+            // Continue and let PDFBox flatten with existing appearance streams.
+        }
+
+        acroForm.flatten();
+        doc.getDocumentCatalog().setAcroForm(null);
+    }
+
+    private static void refreshAcroFormAppearances(PDAcroForm acroForm, List<PDField> fieldsForAppearanceRefresh) {
+        if (acroForm == null) {
+            return;
+        }
+        try {
+            if (fieldsForAppearanceRefresh != null && !fieldsForAppearanceRefresh.isEmpty()) {
+                try {
+                    // PDFBox 2.0.x overload that lets us skip signature fields.
+                    java.lang.reflect.Method refreshSubset = PDAcroForm.class.getMethod("refreshAppearances", List.class);
+                    refreshSubset.invoke(acroForm, fieldsForAppearanceRefresh);
+                    return;
+                } catch (NoSuchMethodException ignored) {
+                    // Fallback to full refresh below.
+                }
+            }
+            acroForm.refreshAppearances();
+        } catch (Exception ignored) {
+            // Do not block generation if appearance refresh fails in a specific reader/runtime.
+        }
+    }
+
+    private static byte[] readAllBytes(java.io.InputStream inputStream) throws Exception {
+        try (ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = inputStream.read(chunk)) != -1) {
+                buffer.write(chunk, 0, read);
+            }
+            return buffer.toByteArray();
+        }
+    }
+
     @Override
     public String toString() {
         return "GenerateFlattenedPdf";
@@ -511,13 +574,41 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
         Object rawValue = getValue(data, field.key);
         if (rawValue == null) {
-            return "";
+            String computedValue = resolveComputedFieldValue(field);
+            return computedValue == null ? "" : computedValue;
         }
 
         if ("date".equals(normalizeFieldType(field.type))) {
             return formatDateLikeValue(rawValue, field.format);
         }
         return normalizePdfText(String.valueOf(rawValue));
+    }
+
+    private static String resolveComputedFieldValue(TemplateField field) {
+        if (field == null || field.key == null) {
+            return null;
+        }
+        String normalizedKey = field.key.trim().toLowerCase(Locale.ROOT);
+        if (normalizedKey.isEmpty()) {
+            return null;
+        }
+
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        if ("__currentdate".equals(normalizedKey) || "__today".equals(normalizedKey)) {
+            LocalDate currentDate = LocalDate.now(zone);
+            return formatDateLikeValue(currentDate, field.format);
+        }
+        if ("__currenttime".equals(normalizedKey) || "__nowtime".equals(normalizedKey)) {
+            java.time.LocalTime currentTime = java.time.LocalTime.now(zone);
+            DateTimeFormatter formatter = resolveTimeFormatter(field.format);
+            return normalizePdfText(formatter.format(currentTime));
+        }
+        if ("__currentdatetime".equals(normalizedKey) || "__now".equals(normalizedKey)) {
+            LocalDateTime currentDateTime = LocalDateTime.now(zone);
+            DateTimeFormatter formatter = resolveDateTimeFormatter(field.format);
+            return normalizePdfText(formatter.format(currentDateTime));
+        }
+        return null;
     }
 
     private static String normalizePdfText(String value) {
@@ -634,6 +725,28 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return DateTimeFormatter.ofPattern(configuredPattern.trim(), Locale.US);
         } catch (IllegalArgumentException ignored) {
             return DEFAULT_DATE_FORMATTER;
+        }
+    }
+
+    private static DateTimeFormatter resolveTimeFormatter(String configuredPattern) {
+        if (configuredPattern == null || configuredPattern.trim().isEmpty()) {
+            return DEFAULT_TIME_FORMATTER;
+        }
+        try {
+            return DateTimeFormatter.ofPattern(configuredPattern.trim(), Locale.US);
+        } catch (IllegalArgumentException ignored) {
+            return DEFAULT_TIME_FORMATTER;
+        }
+    }
+
+    private static DateTimeFormatter resolveDateTimeFormatter(String configuredPattern) {
+        if (configuredPattern == null || configuredPattern.trim().isEmpty()) {
+            return DEFAULT_DATE_TIME_FORMATTER;
+        }
+        try {
+            return DateTimeFormatter.ofPattern(configuredPattern.trim(), Locale.US);
+        } catch (IllegalArgumentException ignored) {
+            return DEFAULT_DATE_TIME_FORMATTER;
         }
     }
 

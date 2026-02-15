@@ -1,8 +1,53 @@
-import { createElement, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { createElement, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties } from "react";
+import type { ActionValue, DynamicValue, EditableValue, ListAttributeValue, ListValue, ReferenceValue } from "mendix";
+import { Big } from "big.js";
 import "./ui/PdfTemplateDesigner.css";
 
-import { PdfTemplateDesignerContainerProps } from "../typings/PdfTemplateDesignerProps";
+interface PdfDesignerCoreDataSourceItem {
+  templateJsonAttr?: EditableValue<string>;
+  basePdfOptionsSource?: ListValue;
+  basePdfAssociation?: ReferenceValue;
+  onChangeAction?: ActionValue;
+  onSaveAction?: ActionValue;
+}
+
+export interface PdfDesignerCoreProps {
+  name: string;
+  class: string;
+  style?: CSSProperties;
+  tabIndex?: number;
+  dataSource?: PdfDesignerCoreDataSourceItem[];
+  fieldKeySourceMode?: "manual" | "datasource" | "json";
+  fieldKeyOptionsSource?: ListValue;
+  fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
+  fieldKeyOptionsJson?: string;
+  pdfJsWorkerUrl?: DynamicValue<string>;
+  pdfJsScriptUrl?: DynamicValue<string>;
+  sigWebScriptUrl?: DynamicValue<string>;
+  showShortcutHints?: boolean;
+  enableKeyboardShortcuts?: boolean;
+  showFieldProperties?: boolean;
+  showPaletteSection?: boolean;
+  showFieldsSection?: boolean;
+  showPagesSection?: boolean;
+  showPropertyKey?: boolean;
+  showPropertyLabel?: boolean;
+  showPropertyShowLabel?: boolean;
+  showPropertyType?: boolean;
+  showPropertyPage?: boolean;
+  showPropertyPosition?: boolean;
+  showPropertySize?: boolean;
+  showPropertyFontSize?: boolean;
+  showPropertyAlignment?: boolean;
+  showPropertyRequired?: boolean;
+  showPropertyDuplicateAction?: boolean;
+  showPropertyDeleteAction?: boolean;
+  saveButtonText?: string;
+  viewMode?: "designer" | "viewer";
+  outputPdfMode?: "flattened" | "acroform";
+}
 
 type FieldType = "text" | "checkbox" | "date" | "signature";
 type FieldAlign = "left" | "center" | "right";
@@ -50,6 +95,7 @@ interface PdfjsPageProxy {
 interface PdfjsDocumentProxy {
   numPages: number;
   getPage: (pageNumber: number) => Promise<PdfjsPageProxy>;
+  getFieldObjects?: () => Promise<Record<string, unknown>>;
 }
 
 interface PdfjsApi {
@@ -280,6 +326,7 @@ function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefine
 
   return JSON.stringify(payload, null, 2);
 }
+
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -713,6 +760,61 @@ function normalizeDateInputValue(value: string): string {
   return new Date(parsed).toISOString().slice(0, 10);
 }
 
+function toBooleanLike(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Math.abs(value) > 0.0000001;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (["true", "1", "yes", "y", "on", "checked", "x"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "off", "unchecked"].includes(normalized)) {
+    return false;
+  }
+  return undefined;
+}
+
+function extractPdfFieldRawValue(fieldObject: unknown): unknown {
+  if (!fieldObject || typeof fieldObject !== "object") {
+    return undefined;
+  }
+  const record = fieldObject as Record<string, unknown>;
+  const candidateKeys = ["value", "fieldValue", "defaultValue", "exportValue", "buttonValue", "data"];
+  for (const key of candidateKeys) {
+    const candidate = record[key];
+    if (candidate !== undefined && candidate !== null) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknown): ViewerFieldValue | undefined {
+  if (rawValue === undefined || rawValue === null) {
+    return undefined;
+  }
+  if (field.type === "checkbox") {
+    return toBooleanLike(rawValue) ?? false;
+  }
+  if (field.type === "signature") {
+    const signatureImage = normalizeSignatureImageFromUnknown(rawValue);
+    if (signatureImage) {
+      return signatureImage;
+    }
+    return typeof rawValue === "string" ? rawValue : "";
+  }
+  return String(rawValue);
+}
+
 function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFieldValue | undefined): ViewerFieldValue {
   if (field.type === "checkbox") {
     return typeof previousValue === "boolean" ? previousValue : false;
@@ -911,7 +1013,7 @@ function resolveTextTemplateValue(property: unknown, templateItem?: unknown): { 
   return { isLoading: false };
 }
 
-export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerProps): ReactElement {
+export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactElement {
   const className = ["pdf-template-designer", props.class].filter(Boolean).join(" ");
   const showShortcutHints = props.showShortcutHints !== false;
   const enableKeyboardShortcuts = props.enableKeyboardShortcuts !== false;
@@ -961,7 +1063,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [placementType, setPlacementType] = useState<FieldType | null>(null);
   const [guides, setGuides] = useState<GuideLine[]>([]);
-  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapEnabled, setSnapEnabled] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pdfDoc, setPdfDoc] = useState<PdfjsDocumentProxy | null>(null);
@@ -1222,6 +1324,45 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
   }, [fields]);
 
   useEffect(() => {
+    if (!isViewerMode || !pdfDoc || fields.length === 0 || typeof pdfDoc.getFieldObjects !== "function") {
+      return;
+    }
+    let cancelled = false;
+    const hydrateViewerValuesFromPdf = async () => {
+      try {
+        const fieldObjects = await pdfDoc.getFieldObjects!();
+        if (!fieldObjects || cancelled) {
+          return;
+        }
+        setViewerFieldValues(previousValues => {
+          const nextValues = { ...previousValues };
+          let hasChanged = false;
+          for (const field of fields) {
+            const byName = (fieldObjects as Record<string, unknown>)[field.key];
+            if (!Array.isArray(byName) || byName.length === 0) {
+              continue;
+            }
+            const rawValue = extractPdfFieldRawValue(byName[0]);
+            const normalized = normalizeViewerValueFromPdfField(field, rawValue);
+            if (normalized === undefined || nextValues[field.key] === normalized) {
+              continue;
+            }
+            nextValues[field.key] = normalized;
+            hasChanged = true;
+          }
+          return hasChanged ? nextValues : previousValues;
+        });
+      } catch (_error) {
+        // Some PDF.js builds or PDF types do not expose field objects.
+      }
+    };
+    hydrateViewerValuesFromPdf();
+    return () => {
+      cancelled = true;
+    };
+  }, [isViewerMode, pdfDoc, fields]);
+
+  useEffect(() => {
     setPageJumpInput(String(pageIndex + 1));
   }, [pageIndex]);
 
@@ -1384,6 +1525,7 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     renderPage();
     return () => {
       cancelled = true;
+
     };
   }, [pdfDoc, pageIndex, containerWidth, zoom]);
 
@@ -2781,3 +2923,4 @@ export default function PdfTemplateDesigner(props: PdfTemplateDesignerContainerP
     </div>
   );
 }
+

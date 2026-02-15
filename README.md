@@ -5,7 +5,8 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 **What's included**
 - `pdftemplatedesigner/` widget source (React/TypeScript)
 - `mendix-module/PdfTemplateDesigner/README.md` with domain model, microflows, and page guidance
-- `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java` Java action stub using PDFBox
+- `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java` Java action for template generation
+- `mendix-module/Document/javasource/document/actions/FinalizePdfToFlattened.java` Java action for final flattening
 
 **Widget setup**
 1. Install dependencies: `npm install`
@@ -120,6 +121,16 @@ Use this when `Field key source = Dropdown from JSON`.
   }
 }
 ```
+
+**Computed key shortcuts**
+- If a field `key` is not found in `dataJson`, the Java action also supports:
+  - `__currentDate` (or `__today`)
+  - `__currentTime` (or `__nowTime`)
+  - `__currentDateTime` (or `__now`)
+- You can control display with field `format`, for example:
+  - date: `MM/dd/yyyy`
+  - time: `HH:mm`
+  - datetime: `MM/dd/yyyy hh:mm a`
 
 **Coordinate system**
 - The widget stores `x`, `y`, `w`, `h` in PDF points (1/72 inch) using a **top-left origin**.

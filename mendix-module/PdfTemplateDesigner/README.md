@@ -28,6 +28,38 @@
      - Create `PdfGeneratedDocument` (or any `System.FileDocument` specialization) as target output.
      - Call `GenerateFlattenedPdf(basePdf, templateJson, dataJson, outputFileDocument)` to write output directly.
      - Set associations and commit.
+4. `ACT_Document_FinalizeSignedPdf` (optional, recommended when using `outputMode = acroform`)
+   - Inputs: `<EditablePdfFileDocument>`
+   - Steps:
+     - User fills editable fields and signs in Viewer mode.
+     - Create final output `System.FileDocument` specialization.
+     - Call `FinalizePdfToFlattened(inputPdf, outputFileDocument)`.
+     - Commit final output as non-editable archive record.
+
+**Two-step AcroForm flow (Document module example)**
+Use this when you want:
+1) prefilled editable AcroForm for user input/signature, then
+2) final flattened non-editable archive PDF.
+
+1. `Document.ACT_Document_GenerateEditablePdf`
+   - Inputs: `<BusinessObject>`, `Document.PdfTemplateDefinition`
+   - Create `Document.PdfWorkDocument` (specialization of `System.FileDocument`)
+   - Build `dataJson` from `<BusinessObject>` (keys must match template `fields[].key`)
+   - Ensure output mode is AcroForm:
+     - Preferred: set `"meta": { "outputMode": "acroform" }` in `TemplateJson`
+     - Optional override: include `"_outputMode": "acroform"` in `dataJson`
+   - Call:
+     - `GenerateFlattenedPdf(basePdf, templateJson, dataJson, PdfWorkDocument)`
+   - Commit `PdfWorkDocument`
+   - Open page with `OlariPDF` in Viewer mode bound to `PdfWorkDocument`
+
+2. `Document.ACT_Document_FinalizeSignedPdf`
+   - Input: `Document.PdfWorkDocument`
+   - Create `Document.PdfFinalDocument` (specialization of `System.FileDocument`)
+   - Call:
+     - `FinalizePdfToFlattened(PdfWorkDocument, PdfFinalDocument)`
+   - Commit `PdfFinalDocument`
+   - Use `PdfFinalDocument` for storage/export/send (non-editable)
 
 **Template JSON (definition)**
 The designer widget produces a **template definition JSON** that describes field positions on the PDF.
@@ -116,6 +148,11 @@ The Java action expects a **data JSON** object where keys match template field `
 - `checkbox` accepts boolean-like values such as `true/false`, `1/0`, `yes/no`, `on/off`, `checked/unchecked`, `y/n`, and numeric values.
 - `date` supports ISO strings like `2022-11-07T05:00:00.000Z` and can be formatted with field `format` (for example `MM/dd/yyyy`).
 - If a key is missing, the field is left blank.
+- Reserved computed keys (when not present in `dataJson`):
+  - `__currentDate` (alias `__today`) -> current server date.
+  - `__currentTime` (alias `__nowTime`) -> current server time.
+  - `__currentDateTime` (alias `__now`) -> current server date/time.
+  - `format` is optional and controls rendering (examples: `MM/dd/yyyy`, `HH:mm`, `MM/dd/yyyy hh:mm a`).
 
 **End-to-end example**
 1. Template JSON field keys: `clientName`, `clientDOB`, `acceptTerms`, `signerName`.
@@ -141,6 +178,7 @@ The Java action expects a **data JSON** object where keys match template field `
 
 **Java action**
 - See `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java`.
+- See `mendix-module/Document/javasource/document/actions/FinalizePdfToFlattened.java`.
 - Recommended action signature:
   - Input: `basePdf` (`System.FileDocument`)
   - Input: `templateJson` (`String`)
@@ -152,6 +190,7 @@ The Java action expects a **data JSON** object where keys match template field `
   - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
 - For `outputMode = acroform`, field values from `dataJson` are written into the created AcroForm fields.
 - In `outputMode = acroform`, generation now validates template field config and fails fast for unsupported field types or invalid key/page/size/align.
+- For final non-editable output after user edits/signs, run `FinalizePdfToFlattened` on the editable document.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.
 - In module settings for `PdfTemplateDesigner`, add Java dependencies:
   - `org.apache.pdfbox:pdfbox:2.0.35`
