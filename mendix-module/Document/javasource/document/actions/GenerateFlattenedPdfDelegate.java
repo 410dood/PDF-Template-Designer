@@ -741,22 +741,34 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         }
         String text = normalizeSignatureImageDataUrl(extractStringFromUnknown(rawValue));
         if (text.isEmpty()) {
+            logSignatureDebug("Signature value could not be normalized to a data URL.");
             return null;
         }
 
         byte[] bytes = decodeSignatureBytes(text);
         if (bytes == null || bytes.length == 0) {
+            logSignatureDebug("Signature value was normalized but base64 decode failed.");
             return null;
         }
 
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
             if (image == null) {
+                logSignatureDebug("Signature bytes decoded but image parser returned null.");
                 return null;
             }
             return LosslessFactory.createFromImage(doc, image);
         } catch (Exception ignored) {
+            logSignatureDebug("Signature image creation failed: " + ignored.getMessage());
             return null;
+        }
+    }
+
+    private static void logSignatureDebug(String message) {
+        try {
+            Core.getLogger("PdfTemplateDesigner").warn("[GenerateFlattenedPdfDelegate] " + message);
+        } catch (Exception ignored) {
+            // Logging should never block PDF generation.
         }
     }
 
@@ -787,7 +799,7 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         }
 
         if (payload.contains("%")) {
-            payload = URLDecoder.decode(payload, StandardCharsets.UTF_8.name()).replaceAll("\\s+", "");
+            payload = URLDecoder.decode(payload, StandardCharsets.UTF_8).replaceAll("\\s+", "");
         }
 
         try {
@@ -806,7 +818,37 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
             return null;
         }
         if (value instanceof String) {
-            return (String) value;
+            String text = ((String) value).trim();
+            if (text.isEmpty()) {
+                return text;
+            }
+
+            // Some pipelines persist signature payload as serialized JSON text.
+            if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+                try {
+                    Object parsed = MAPPER.readValue(text, Object.class);
+                    String extracted = extractStringFromUnknown(parsed);
+                    if (!isBlankValue(extracted)) {
+                        return extracted;
+                    }
+                } catch (Exception ignored) {
+                    // Keep original text fallback.
+                }
+            }
+
+            // Some payloads are JSON-escaped strings, e.g. "\"data:image/png;base64,...\""
+            if (text.startsWith("\"") && text.endsWith("\"")) {
+                try {
+                    String unescaped = MAPPER.readValue(text, String.class);
+                    if (!isBlankValue(unescaped)) {
+                        return unescaped;
+                    }
+                } catch (Exception ignored) {
+                    // Keep original text fallback.
+                }
+            }
+
+            return text;
         }
         if (value instanceof Map<?, ?>) {
             Map<?, ?> map = (Map<?, ?>) value;
