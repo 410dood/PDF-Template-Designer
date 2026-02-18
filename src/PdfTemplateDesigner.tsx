@@ -1151,7 +1151,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
   const viewMode: ViewMode = isViewMode((props as any).viewMode) ? ((props as any).viewMode as ViewMode) : "designer";
   const isViewerMode = viewMode === "viewer";
-  const hasSidebarSections = showPaletteSection || showFieldsSection || showPagesSection;
+  const hasSidebarSections = showPaletteSection;
+  const hasRightPanelSections = showFieldProperties || showFieldsSection || showPagesSection;
   const hasVisibleFieldPropertyControls =
     showPropertyKey ||
     showPropertyLabel ||
@@ -2709,7 +2710,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       ) : null}
       <div
         className={`pdf-template-designer__layout${
-          showFieldProperties ? "" : " pdf-template-designer__layout--no-properties"
+          hasRightPanelSections ? "" : " pdf-template-designer__layout--no-properties"
         }${hasSidebarSections ? "" : " pdf-template-designer__layout--no-sidebar"}`}
       >
         {hasSidebarSections ? (
@@ -2722,54 +2723,66 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 [
                   <button
                     key="palette_text"
-                    className={`pdf-template-designer__button${placementType === "text" ? " is-active" : ""}`}
+                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
+                      placementType === "text" ? " is-active" : ""
+                    }`}
                     onClick={() => handlePlacementSelect("text")}
                     onDoubleClick={() => addFieldCentered("text")}
                     draggable
                     onDragStart={event => handlePaletteDragStart(event, "text")}
                     type="button"
                   >
-                    Text field
+                    <span className="pdf-template-designer__palette-tool-icon">T</span>
+                    <span className="pdf-template-designer__palette-tool-label">Text</span>
                   </button>,
                   <button
                     key="palette_checkbox"
-                    className={`pdf-template-designer__button${placementType === "checkbox" ? " is-active" : ""}`}
+                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
+                      placementType === "checkbox" ? " is-active" : ""
+                    }`}
                     onClick={() => handlePlacementSelect("checkbox")}
                     onDoubleClick={() => addFieldCentered("checkbox")}
                     draggable
                     onDragStart={event => handlePaletteDragStart(event, "checkbox")}
                     type="button"
                   >
-                    Checkbox
+                    <span className="pdf-template-designer__palette-tool-icon">[]</span>
+                    <span className="pdf-template-designer__palette-tool-label">Check</span>
                   </button>,
                   <button
                     key="palette_date"
-                    className={`pdf-template-designer__button${placementType === "date" ? " is-active" : ""}`}
+                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
+                      placementType === "date" ? " is-active" : ""
+                    }`}
                     onClick={() => handlePlacementSelect("date")}
                     onDoubleClick={() => addFieldCentered("date")}
                     draggable
                     onDragStart={event => handlePaletteDragStart(event, "date")}
                     type="button"
                   >
-                    Date
+                    <span className="pdf-template-designer__palette-tool-icon">DT</span>
+                    <span className="pdf-template-designer__palette-tool-label">Date</span>
                   </button>,
                   <button
                     key="palette_signature"
-                    className={`pdf-template-designer__button${placementType === "signature" ? " is-active" : ""}`}
+                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
+                      placementType === "signature" ? " is-active" : ""
+                    }`}
                     onClick={() => handlePlacementSelect("signature")}
                     onDoubleClick={() => addFieldCentered("signature")}
                     draggable
                     onDragStart={event => handlePaletteDragStart(event, "signature")}
                     type="button"
                   >
-                    Signature
+                    <span className="pdf-template-designer__palette-tool-icon">SIG</span>
+                    <span className="pdf-template-designer__palette-tool-label">Sign</span>
                   </button>
                 ]
               ) : (
                 keyInputState.options.map(option => (
                   <button
                     key={`palette_${option.value}`}
-                    className={`pdf-template-designer__button${
+                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementKeyOption?.value === option.value ? " is-active" : ""
                     }`}
                     onClick={() => handleKeyPlacementSelect(option)}
@@ -2778,7 +2791,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     onDragStart={event => handleKeyPaletteDragStart(event, option)}
                     type="button"
                   >
-                    {option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                    <span className="pdf-template-designer__palette-tool-icon">K</span>
+                    <span className="pdf-template-designer__palette-tool-label">
+                      {option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                    </span>
                   </button>
                 ))
               )}
@@ -2808,57 +2824,6 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           </div>
           ) : null}
 
-          {showFieldsSection ? (
-          <div>
-            <div className="pdf-template-designer__section-title">Fields</div>
-            <div className="pdf-template-designer__field-list">
-              {fields.length === 0 ? (
-                <div className="pdf-template-designer__status">No fields yet.</div>
-              ) : (
-                fields.map(field => (
-                  <button
-                    key={field.id}
-                    className={`pdf-template-designer__field-pill${
-                      selectedFieldId === field.id ? " is-selected" : ""
-                    }`}
-                    type="button"
-                    onClick={() => setSelectedFieldId(field.id)}
-                  >
-                    <span>{field.label || field.key}</span>
-                    <span>{field.type}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-          ) : null}
-
-          {showPagesSection ? (
-          <div>
-            <div className="pdf-template-designer__section-title">Pages</div>
-            <div className="pdf-template-designer__thumb-list">
-              {Array.from({ length: pageCount }, (_, idx) => (
-                <button
-                  key={`thumb_${idx}`}
-                  type="button"
-                  className={`pdf-template-designer__thumb${idx === pageIndex ? " is-selected" : ""}`}
-                  onClick={() => setPageIndex(idx)}
-                >
-                  <div className="pdf-template-designer__thumb-canvas">
-                    {pageThumbs[idx] ? (
-                      <img src={pageThumbs[idx]} alt={`Page ${idx + 1}`} />
-                    ) : (
-                      <span className="pdf-template-designer__thumb-placeholder">
-                        {isBuildingThumbs ? "..." : idx + 1}
-                      </span>
-                    )}
-                  </div>
-                  <span>Page {idx + 1}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          ) : null}
         </aside>
         ) : null}
 
@@ -3051,8 +3016,62 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           </div>
         </section>
 
-        {showFieldProperties ? (
+        {hasRightPanelSections ? (
           <aside className="pdf-template-designer__properties">
+            {showFieldsSection ? (
+            <div>
+              <div className="pdf-template-designer__section-title">Field list</div>
+              <div className="pdf-template-designer__field-list">
+                {fields.length === 0 ? (
+                  <div className="pdf-template-designer__status">No fields yet.</div>
+                ) : (
+                  fields.map(field => (
+                    <button
+                      key={field.id}
+                      className={`pdf-template-designer__field-pill${
+                        selectedFieldId === field.id ? " is-selected" : ""
+                      }`}
+                      type="button"
+                      onClick={() => setSelectedFieldId(field.id)}
+                    >
+                      <span>{field.label || field.key}</span>
+                      <span>{field.type}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+            ) : null}
+
+            {showPagesSection ? (
+            <div>
+              <div className="pdf-template-designer__section-title">Pages</div>
+              <div className="pdf-template-designer__thumb-list">
+                {Array.from({ length: pageCount }, (_, idx) => (
+                  <button
+                    key={`thumb_${idx}`}
+                    type="button"
+                    className={`pdf-template-designer__thumb${idx === pageIndex ? " is-selected" : ""}`}
+                    onClick={() => setPageIndex(idx)}
+                  >
+                    <div className="pdf-template-designer__thumb-canvas">
+                      {pageThumbs[idx] ? (
+                        <img src={pageThumbs[idx]} alt={`Page ${idx + 1}`} />
+                      ) : (
+                        <span className="pdf-template-designer__thumb-placeholder">
+                          {isBuildingThumbs ? "..." : idx + 1}
+                        </span>
+                      )}
+                    </div>
+                    <span>Page {idx + 1}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            ) : null}
+
+            {showFieldProperties ? (
+            <div>
             <div className="pdf-template-designer__section-title">Field properties</div>
             {selectedField ? (
               hasVisibleFieldPropertyControls ? (
@@ -3252,6 +3271,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             ) : (
               <div className="pdf-template-designer__status">Select a field to edit.</div>
             )}
+            </div>
+            ) : null}
           </aside>
         ) : null}
       </div>
