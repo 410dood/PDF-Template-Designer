@@ -4,13 +4,13 @@
  * @author Mendix Widgets Framework Team
  */
 import { CSSProperties } from "react";
-import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue, ReferenceValue } from "mendix";
+import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue } from "mendix";
 import { Big } from "big.js";
 
 export interface DataSourceType {
     templateJsonAttr: EditableValue<string>;
-    basePdfOptionsSource?: ListValue;
-    basePdfAssociation: ReferenceValue;
+    dataJsonAttr?: EditableValue<string>;
+    basePdfSource?: ListValue;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
 }
@@ -23,8 +23,8 @@ export type OutputPdfModeEnum = "flattened" | "acroform";
 
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
-    basePdfOptionsSource: {} | { caption: string } | { type: string } | null;
-    basePdfAssociation: string;
+    dataJsonAttr: string;
+    basePdfSource: {} | { caption: string } | { type: string } | null;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
 }

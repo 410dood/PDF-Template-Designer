@@ -186,6 +186,9 @@
 .pdf-template-designer__palette {
   display: grid;
   gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .pdf-template-designer__button {
@@ -418,7 +421,7 @@
   align-items: center;
   border: 1px solid rgba(31, 35, 48, 0.45);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.92);
+  background: #fff;
   overflow: hidden;
 }
 
@@ -437,7 +440,7 @@
   border: 0;
   border-radius: 0;
   padding: 0 6px;
-  background: transparent;
+  background: #fff;
   color: #111827;
 }
 

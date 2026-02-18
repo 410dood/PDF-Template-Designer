@@ -14,14 +14,15 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 3. Build MPK: `npm run build` or `npm run release`
 
 **Widget properties**
-- `Template definition` (data source): point to the `PdfTemplateDefinition` context (or list with a single item).
-- `Template JSON` (attribute): bind to `PdfTemplateDefinition.TemplateJson` (LongString).
-- `Base PDF options` (data source): list of selectable `PdfTemplate` objects (used by Mendix association picker).
-- `Base PDF association`: bind to `PdfTemplateDefinition_PdfTemplate` (Reference to `PdfTemplate` FileDocument).
+- `Template definition` (data source): point to your `FormConfiguration` context (previously `PdfTemplateDefinition`) or equivalent object.
+- `Template JSON` (attribute): bind to configuration template JSON (for example `FormConfiguration.TemplateJson`).
+- `Data JSON` (attribute): bind to your per-document instance attribute (for example `ClientDocument.DataJson`) so Viewer edits/signatures persist.
+- `Base PDF datasource` (optional): datasource that returns the base PDF `FileDocument` object. The widget uses the first item.
+- If `Base PDF datasource` is empty and the context object is a `System.FileDocument` specialization, the widget uses the context object file as the base PDF.
 - `Field key source` (enumeration): `Manual text input` (default), `Dropdown from datasource`, or `Dropdown from JSON`.
-- `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource`.
+- `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource` (drives key palette + Key dropdown; built-in computed keys are also appended).
 - `Field key option attribute` (optional): attribute from the datasource object that contains the key string.
-- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON`.
+- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON` (drives key palette + Key dropdown; built-in computed keys are also appended).
 - `PDF.js worker URL` (text template, optional): explicit URL for the worker script (Advanced category).
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
 - `SigWeb script URL` (text template, optional): URL to `SigWebTablet.js` for external signature-pad capture in Viewer mode.
@@ -58,8 +59,8 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 ]
 ```
 
-When `type` is provided, the dropdown shows it (for example `Client Date Of Birth (DateTime)`).
-Selecting an option also auto-maps widget field type for:
+When `type` is provided, the key palette and dropdown show it (for example `Client Date Of Birth (DateTime)`).
+Placing/selecting an option also auto-maps widget field type for:
 - `Boolean` -> `checkbox`
 - `Date`/`DateTime`/`Time` -> `date`
 - `Signature` -> `signature`
@@ -82,8 +83,13 @@ Use this when `Field key source = Dropdown from JSON`.
 ```
 
 **Designer UX (MVP+)**
-- Click-to-place workflow: choose a palette tool, then click on the PDF to place the field.
-- Palette drag/drop: drag a field type from the palette and drop onto the page.
+- Manual mode (`Field key source = Manual text input`): choose a field type tool, then click/drag to place.
+- Dropdown modes (`Field key source = Dropdown from datasource/json`): palette lists keys so users can drag a key directly to the page in one step.
+- Dropdown modes also include built-in key options:
+  - `__currentDate` (`__today` alias)
+  - `__currentTime` (`__nowTime` alias)
+  - `__currentDateTime` (`__now` alias)
+  - `__signature` (signature placeholder)
 - Base document fallback: if the linked FileDocument is an image (`.png/.jpg/.jpeg`) instead of a PDF, the widget renders it as a 1-page canvas with the same field overlay behavior.
 - Page thumbnails: quick page navigation via sidebar thumbnails.
 - Quick page jump: type a page number in the toolbar.
@@ -123,7 +129,7 @@ Use this when `Field key source = Dropdown from JSON`.
 ```
 
 **Computed key shortcuts**
-- If a field `key` is not found in `dataJson`, the Java action also supports:
+- If a field `key` is not found in `dataJson` (or is present as blank text), the Java action also supports:
   - `__currentDate` (or `__today`)
   - `__currentTime` (or `__nowTime`)
   - `__currentDateTime` (or `__now`)
@@ -131,20 +137,28 @@ Use this when `Field key source = Dropdown from JSON`.
   - date: `MM/dd/yyyy`
   - time: `HH:mm`
   - datetime: `MM/dd/yyyy hh:mm a`
+- Flattened `signature` fields render image data from `DataJson` when the value is a base64 image string (for example `data:image/png;base64,...`).
 
 **Coordinate system**
 - The widget stores `x`, `y`, `w`, `h` in PDF points (1/72 inch) using a **top-left origin**.
 - The Java action converts to the PDF bottom-left origin (`pdfY = pageHeight - y - h`).
 
 **Output modes**
-- `flattened`: Java action draws final text/marks directly on the page content.
-  - If a field has `"showLabel": true`, its `label` (or fallback to `key`) is also rendered.
-- `acroform`: Java action creates interactive form fields (`text`, `date`, `checkbox`, `signature`) using the same template coordinates.
+- Runtime recommendation is a single path: always generate flattened output from `TemplateJson + DataJson`.
+- In this architecture, `outputMode` should be treated as legacy; do not use runtime AcroForm generation for end-user fill/sign flows.
+- In flattened output, if a field has `"showLabel": true`, its `label` (or fallback to `key`) is also rendered.
 
 **Viewer mode**
 - When `View mode = Viewer`, the widget renders the linked document with the same canvas engine and overlays interactive controls for your template fields.
 - `text` and `date` fields are editable inputs, `checkbox` fields are clickable, and `signature` fields use a custom mouse/touch canvas.
 - Signature controls include `Clear signature` and optional `Use SigWeb` (when `SigWeb script URL` is configured and a supported SigWeb capture function is available).
+- With `Data JSON` bound, Viewer mode continuously syncs entered values/signatures into that attribute (overlay + `Data JSON` source of truth).
+- Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF/AcroForm field values are not used as fallback.
+- For final output from Viewer-entered values, pass the stored `Data JSON` into your generation/finalization microflow.
+- `FinalizePdfToFlattened` only flattens values that already exist inside PDF form fields; Viewer overlay values must be applied from `Data JSON` in your flow.
+- When generating `flattened` output from a PDF that already has AcroForm fields, the Java action now prioritizes flattening those existing fields (with refreshed appearances) to avoid ghost/placeholder text overlays.
+- Flatten/render paths now clear field content areas before drawing/finalizing values, which prevents stale light placeholder text when regenerating from previously edited PDFs.
+- See `mendix-module/PdfTemplateDesigner/README.md` section `Runtime workflow (end user, overlay mode)` for the recommended microflow sequence.
 
 **PDF.js worker**
 - The widget loads PDF.js from `window.pdfjsLib` when present.

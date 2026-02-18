@@ -1,14 +1,14 @@
 ﻿import { createElement, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { CSSProperties } from "react";
-import type { ActionValue, DynamicValue, EditableValue, ListAttributeValue, ListValue, ReferenceValue } from "mendix";
+import type { ActionValue, DynamicValue, EditableValue, ListAttributeValue, ListValue } from "mendix";
 import { Big } from "big.js";
 import "./ui/PdfTemplateDesigner.css";
 
 interface PdfDesignerCoreDataSourceItem {
   templateJsonAttr?: EditableValue<string>;
-  basePdfOptionsSource?: ListValue;
-  basePdfAssociation?: ReferenceValue;
+  dataJsonAttr?: EditableValue<string>;
+  basePdfSource?: ListValue;
   onChangeAction?: ActionValue;
   onSaveAction?: ActionValue;
 }
@@ -62,6 +62,7 @@ interface KeyOption {
 }
 
 interface TemplateField {
+  id: string;
   key: string;
   label: string;
   showLabel: boolean;
@@ -76,9 +77,11 @@ interface TemplateField {
   required: boolean;
 }
 
+type SerializedTemplateField = Omit<TemplateField, "id">;
+
 interface TemplateDefinition {
   basePdf?: { fileId?: string };
-  fields: TemplateField[];
+  fields: SerializedTemplateField[];
   meta: { units: "pt"; createdWith: string; outputMode: TemplateOutputMode };
 }
 
@@ -115,7 +118,7 @@ interface PageSize {
 }
 
 interface DragState {
-  fieldKey: string;
+  fieldId: string;
   mode: "move" | "resize";
   startX: number;
   startY: number;
@@ -150,9 +153,11 @@ const PDFJS_AMD_MODULE_IDS = [
 ];
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
-const PALETTE_DRAG_TYPE = "application/x-pdf-field-type";
+const PALETTE_TYPE_DRAG_TYPE = "application/x-pdf-field-type";
+const PALETTE_KEY_DRAG_TYPE = "application/x-pdf-field-key";
 const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = ["GetSigImageB64", "GetSigImageBase64", "GetSigImage"];
 let pdfjsLoader: Promise<PdfjsApi> | null = null;
+let fieldIdCounter = 0;
 
 const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSize" | "align">> = {
   text: { w: 180, h: 22, fontSize: 10, align: "left" },
@@ -160,10 +165,21 @@ const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSiz
   date: { w: 120, h: 20, fontSize: 10, align: "left" },
   signature: { w: 200, h: 30, fontSize: 10, align: "left" }
 };
+const BUILTIN_COMPUTED_KEY_OPTIONS: KeyOption[] = [
+  { value: "__currentDate", label: "__currentDate (alias __today)", dataType: "Date" },
+  { value: "__currentTime", label: "__currentTime (alias __nowTime)", dataType: "Time" },
+  { value: "__currentDateTime", label: "__currentDateTime (alias __now)", dataType: "DateTime" },
+  { value: "__signature", label: "__signature (signature placeholder)", dataType: "Signature" }
+];
 
 function toNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function createFieldId(): string {
+  fieldIdCounter += 1;
+  return `field_${fieldIdCounter}`;
 }
 
 function isFieldType(value: unknown): value is FieldType {
@@ -202,6 +218,53 @@ function toTrimmedString(value: unknown): string {
     return "";
   }
   return String(value).trim();
+}
+
+function toObjectId(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  const asRecord = value as Record<string, unknown>;
+  if (asRecord && typeof asRecord === "object") {
+    return toObjectId(asRecord.id);
+  }
+  return undefined;
+}
+
+function resolveContextObjectId(item: PdfDesignerCoreDataSourceItem | undefined): string | undefined {
+  if (!item) {
+    return undefined;
+  }
+  const record = item as unknown as Record<string, unknown>;
+  const directId = toObjectId(record.id);
+  if (directId) {
+    return directId;
+  }
+  const nestedCandidates = [record.value, record.object, record.obj, record._object];
+  for (const candidate of nestedCandidates) {
+    const nestedId = toObjectId(candidate);
+    if (nestedId) {
+      return nestedId;
+    }
+  }
+  return undefined;
+}
+
+function resolveFirstDatasourceObjectId(source?: ListValue): string | undefined {
+  if (!source || normalizeStatus((source as any).status) !== "available" || !source.items || source.items.length === 0) {
+    return undefined;
+  }
+  return toObjectId(source.items[0]);
 }
 
 function normalizeKeyOption(value: unknown): KeyOption | undefined {
@@ -259,6 +322,10 @@ function dedupeKeyOptions(options: KeyOption[]): KeyOption[] {
   return result;
 }
 
+function withComputedKeyOptions(options: KeyOption[]): KeyOption[] {
+  return dedupeKeyOptions([...options, ...BUILTIN_COMPUTED_KEY_OPTIONS]);
+}
+
 function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?: string } {
   if (!text || !text.trim()) {
     return { options: [] };
@@ -285,6 +352,7 @@ function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?
 function normalizeField(input: any, index: number): TemplateField {
   const type: FieldType = isFieldType(input?.type) ? input.type : "text";
   const defaults = FIELD_DEFAULTS[type];
+  const id = createFieldId();
   const key = typeof input?.key === "string" && input.key.trim().length > 0 ? input.key.trim() : `field_${index + 1}`;
   const label = typeof input?.label === "string" ? input.label : "";
   const showLabel = input?.showLabel !== false;
@@ -297,7 +365,7 @@ function normalizeField(input: any, index: number): TemplateField {
   const align = isAlign(input?.align) ? input.align : defaults.align;
   const required = Boolean(input?.required);
 
-  return { key, label, showLabel, type, page, x, y, w, h, fontSize, align, required };
+  return { id, key, label, showLabel, type, page, x, y, w, h, fontSize, align, required };
 }
 
 function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: string } {
@@ -317,10 +385,71 @@ function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: st
   }
 }
 
+function parseDataJson(text?: string): { values: Record<string, unknown>; error?: string } {
+  if (!text || !text.trim()) {
+    return { values: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { values: {}, error: "Data JSON must be an object." };
+    }
+    return { values: parsed as Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid JSON";
+    return { values: {}, error: message };
+  }
+}
+
+function buildDataPayload(
+  fields: TemplateField[],
+  values: Record<string, ViewerFieldValue>,
+  existingValues?: Record<string, unknown>
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...(existingValues || {}) };
+  const handledKeys = new Set<string>();
+  for (const field of fields) {
+    if (!field.key || handledKeys.has(field.key)) {
+      continue;
+    }
+    handledKeys.add(field.key);
+    const rawValue = values[field.key];
+    if (field.type === "checkbox") {
+      payload[field.key] = Boolean(rawValue);
+      continue;
+    }
+    payload[field.key] = typeof rawValue === "string" ? rawValue : "";
+  }
+  return payload;
+}
+
+function buildDataJson(
+  fields: TemplateField[],
+  values: Record<string, ViewerFieldValue>,
+  existingValues?: Record<string, unknown>
+): string {
+  const payload = buildDataPayload(fields, values, existingValues);
+  return JSON.stringify(payload, null, 2);
+}
+
 function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefined, outputMode: TemplateOutputMode): string {
   const payload: TemplateDefinition = {
     basePdf: basePdfId ? { fileId: basePdfId } : undefined,
-    fields: fields.map(field => ({ ...field })),
+    fields: fields.map(field => ({
+      key: field.key,
+      label: field.label,
+      showLabel: field.showLabel,
+      type: field.type,
+      page: field.page,
+      x: field.x,
+      y: field.y,
+      w: field.w,
+      h: field.h,
+      fontSize: field.fontSize,
+      align: field.align,
+      required: field.required
+    })),
     meta: { units: "pt", createdWith: "pdftemplatedesigner", outputMode }
   };
 
@@ -365,6 +494,7 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
     const a = left[index];
     const b = right[index];
     if (
+      a.id !== b.id ||
       a.key !== b.key ||
       a.label !== b.label ||
       a.showLabel !== b.showLabel ||
@@ -783,21 +913,6 @@ function toBooleanLike(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function extractPdfFieldRawValue(fieldObject: unknown): unknown {
-  if (!fieldObject || typeof fieldObject !== "object") {
-    return undefined;
-  }
-  const record = fieldObject as Record<string, unknown>;
-  const candidateKeys = ["value", "fieldValue", "defaultValue", "exportValue", "buttonValue", "data"];
-  for (const key of candidateKeys) {
-    const candidate = record[key];
-    if (candidate !== undefined && candidate !== null) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
-
 function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknown): ViewerFieldValue | undefined {
   if (rawValue === undefined || rawValue === null) {
     return undefined;
@@ -1054,14 +1169,18 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const fieldsRef = useRef<TemplateField[]>([]);
-  const selectedKeyRef = useRef<string | null>(null);
+  const selectedFieldIdRef = useRef<string | null>(null);
   const undoStackRef = useRef<TemplateField[][]>([]);
   const redoStackRef = useRef<TemplateField[][]>([]);
   const lastLoadedJsonRef = useRef<string | undefined>(undefined);
+  const lastLoadedDataJsonRef = useRef<string | undefined>(undefined);
+  const lastParsedDataJsonRef = useRef<Record<string, unknown>>({});
+  const viewerFieldValuesDirtyRef = useRef(false);
 
   const [fields, setFields] = useState<TemplateField[]>([]);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [placementType, setPlacementType] = useState<FieldType | null>(null);
+  const [placementKeyOption, setPlacementKeyOption] = useState<KeyOption | null>(null);
   const [guides, setGuides] = useState<GuideLine[]>([]);
   const [snapEnabled, setSnapEnabled] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -1075,9 +1194,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [dataJsonError, setDataJsonError] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [viewerFieldValues, setViewerFieldValues] = useState<Record<string, ViewerFieldValue>>({});
-  const [activeViewerSignatureKey, setActiveViewerSignatureKey] = useState<string | null>(null);
+  const [activeViewerSignatureFieldId, setActiveViewerSignatureFieldId] = useState<string | null>(null);
   const [viewerSignatureMessage, setViewerSignatureMessage] = useState<string | null>(null);
   const [sigWebState, setSigWebState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [sigWebError, setSigWebError] = useState<string | null>(null);
@@ -1108,8 +1228,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   }, [fields]);
 
   useEffect(() => {
-    selectedKeyRef.current = selectedKey;
-  }, [selectedKey]);
+    selectedFieldIdRef.current = selectedFieldId;
+  }, [selectedFieldId]);
 
   useEffect(() => {
     return () => {
@@ -1217,15 +1337,21 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const templateJsonValue = useMemo(() => {
     return dataSourceItem?.templateJsonAttr;
   }, [dataSourceItem]);
-
-  const basePdfReference = useMemo(() => {
-    return dataSourceItem?.basePdfAssociation;
+  const dataJsonValue = useMemo(() => {
+    return dataSourceItem?.dataJsonAttr;
   }, [dataSourceItem]);
 
-  const basePdfObject = basePdfReference?.status === "available" ? basePdfReference.value : undefined;
-  const basePdfId = basePdfObject?.id;
+  const basePdfSource = useMemo(() => dataSourceItem?.basePdfSource, [dataSourceItem]);
+  const contextObjectId = useMemo(() => resolveContextObjectId(dataSourceItem), [dataSourceItem]);
+  const basePdfFromDatasourceId = useMemo(() => resolveFirstDatasourceObjectId(basePdfSource), [basePdfSource]);
+
+  const basePdfId = basePdfFromDatasourceId || contextObjectId;
   const templateJsonText =
     templateJsonValue && templateJsonValue.status === "available" ? templateJsonValue.value || "" : "";
+  const dataJsonText =
+    dataJsonValue && dataJsonValue.status === "available" ? dataJsonValue.value || "" : "";
+  const isDataJsonBound = Boolean(dataJsonValue && dataJsonValue.status === "available");
+  const showViewerDataJsonBindingWarning = isViewerMode && !isDataJsonBound;
   const jsonKeyOptionsState = useMemo(
     () => parseFieldKeyOptionsJson(fieldKeyOptionsJson),
     [fieldKeyOptionsJson]
@@ -1290,10 +1416,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     redoStackRef.current = [];
     setGuides([]);
     lastLoadedJsonRef.current = incoming;
-    if (!selectedKey && parsed.fields.length > 0) {
-      setSelectedKey(parsed.fields[0].key);
+    if (!selectedFieldId && parsed.fields.length > 0) {
+      setSelectedFieldId(parsed.fields[0].id);
     }
-  }, [templateJsonText, templateJsonValue, selectedKey]);
+  }, [templateJsonText, templateJsonValue, selectedFieldId]);
 
   useEffect(() => {
     setViewerFieldValues(previousValues => {
@@ -1318,49 +1444,74 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       return nextValues;
     });
 
-    setActiveViewerSignatureKey(previousKey =>
-      previousKey && fields.some(field => field.type === "signature" && field.key === previousKey) ? previousKey : null
+    setActiveViewerSignatureFieldId(previousFieldId =>
+      previousFieldId && fields.some(field => field.type === "signature" && field.id === previousFieldId)
+        ? previousFieldId
+        : null
     );
   }, [fields]);
 
   useEffect(() => {
-    if (!isViewerMode || !pdfDoc || fields.length === 0 || typeof pdfDoc.getFieldObjects !== "function") {
+    if (!isViewerMode || !isDataJsonBound) {
+      setDataJsonError(null);
+      lastLoadedDataJsonRef.current = undefined;
+      lastParsedDataJsonRef.current = {};
+      viewerFieldValuesDirtyRef.current = false;
+      setViewerFieldValues(previousValues => {
+        const nextValues: Record<string, ViewerFieldValue> = {};
+        for (const field of fields) {
+          nextValues[field.key] = initialViewerFieldValue(field, undefined);
+        }
+        const previousKeys = Object.keys(previousValues);
+        const nextKeys = Object.keys(nextValues);
+        if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+          return previousValues;
+        }
+        return nextValues;
+      });
       return;
     }
-    let cancelled = false;
-    const hydrateViewerValuesFromPdf = async () => {
-      try {
-        const fieldObjects = await pdfDoc.getFieldObjects!();
-        if (!fieldObjects || cancelled) {
-          return;
+
+    const incoming = dataJsonText || "";
+    lastLoadedDataJsonRef.current = incoming;
+
+    const parsed = parseDataJson(incoming);
+    if (parsed.error) {
+      setDataJsonError(parsed.error);
+      lastParsedDataJsonRef.current = {};
+      viewerFieldValuesDirtyRef.current = false;
+      setViewerFieldValues(previousValues => {
+        const nextValues: Record<string, ViewerFieldValue> = {};
+        for (const field of fields) {
+          nextValues[field.key] = initialViewerFieldValue(field, undefined);
         }
-        setViewerFieldValues(previousValues => {
-          const nextValues = { ...previousValues };
-          let hasChanged = false;
-          for (const field of fields) {
-            const byName = (fieldObjects as Record<string, unknown>)[field.key];
-            if (!Array.isArray(byName) || byName.length === 0) {
-              continue;
-            }
-            const rawValue = extractPdfFieldRawValue(byName[0]);
-            const normalized = normalizeViewerValueFromPdfField(field, rawValue);
-            if (normalized === undefined || nextValues[field.key] === normalized) {
-              continue;
-            }
-            nextValues[field.key] = normalized;
-            hasChanged = true;
-          }
-          return hasChanged ? nextValues : previousValues;
-        });
-      } catch (_error) {
-        // Some PDF.js builds or PDF types do not expose field objects.
+        const previousKeys = Object.keys(previousValues);
+        const nextKeys = Object.keys(nextValues);
+        if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+          return previousValues;
+        }
+        return nextValues;
+      });
+      return;
+    }
+
+    setDataJsonError(null);
+    lastParsedDataJsonRef.current = parsed.values;
+    viewerFieldValuesDirtyRef.current = false;
+    setViewerFieldValues(previousValues => {
+      const nextValues: Record<string, ViewerFieldValue> = {};
+      for (const field of fields) {
+        const normalized = normalizeViewerValueFromPdfField(field, parsed.values[field.key]);
+        nextValues[field.key] = normalized === undefined ? initialViewerFieldValue(field, undefined) : normalized;
       }
-    };
-    hydrateViewerValuesFromPdf();
-    return () => {
-      cancelled = true;
-    };
-  }, [isViewerMode, pdfDoc, fields]);
+      const previousKeys = Object.keys(previousValues);
+      const nextKeys = Object.keys(nextValues);
+      if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+        return previousValues;
+      }
+      return nextValues;
+    });
+  }, [isViewerMode, isDataJsonBound, dataJsonText, fields]);
 
   useEffect(() => {
     setPageJumpInput(String(pageIndex + 1));
@@ -1597,6 +1748,49 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     }
   }, []);
 
+  const commitDataJson = useCallback(
+    (
+      nextViewerValues: Record<string, ViewerFieldValue>,
+      options: {
+        runSaveAction?: boolean;
+        runOnChangeAction?: boolean;
+      } = {}
+    ) => {
+      const { runSaveAction = false, runOnChangeAction = false } = options;
+      const attribute = dataSourceItem?.dataJsonAttr;
+      if (attribute && attribute.status === "available") {
+        const payloadObject = buildDataPayload(fieldsRef.current, nextViewerValues, lastParsedDataJsonRef.current);
+        const payload = buildDataJson(fieldsRef.current, nextViewerValues, lastParsedDataJsonRef.current);
+        if ((attribute.value || "") !== payload) {
+          try {
+            attribute.setValue(payload);
+            lastLoadedDataJsonRef.current = payload;
+            lastParsedDataJsonRef.current = payloadObject;
+          } catch (error) {
+            console.warn("Failed to update Data JSON attribute.", error);
+          }
+        }
+      }
+
+      if (runOnChangeAction) {
+        runConfiguredAction(dataSourceItem?.onChangeAction);
+      }
+
+      if (runSaveAction) {
+        runConfiguredAction(dataSourceItem?.onSaveAction);
+      }
+    },
+    [dataSourceItem, runConfiguredAction]
+  );
+
+  useEffect(() => {
+    if (!isViewerMode || !isDataJsonBound || !viewerFieldValuesDirtyRef.current) {
+      return;
+    }
+    viewerFieldValuesDirtyRef.current = false;
+    commitDataJson(viewerFieldValues);
+  }, [isViewerMode, isDataJsonBound, viewerFieldValues, commitDataJson]);
+
   const commitTemplate = useCallback(
     (
       nextFields: TemplateField[],
@@ -1663,16 +1857,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const createField = useCallback(
-    (type: FieldType, x: number, y: number): TemplateField => {
+    (type: FieldType, x: number, y: number, overrides?: { key?: string; label?: string }): TemplateField => {
       const defaults = FIELD_DEFAULTS[type];
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
-      const key = nextFieldKey(type, fieldsRef.current);
+      const key = overrides?.key?.trim() || nextFieldKey(type, fieldsRef.current);
       const snappedX = snapValue(clamp(x - defaults.w / 2, 0, width - defaults.w), snapEnabled);
       const snappedY = snapValue(clamp(y - defaults.h / 2, 0, height - defaults.h), snapEnabled);
       return {
+        id: createFieldId(),
         key,
-        label: "",
+        label: overrides?.label ?? "",
         showLabel: true,
         type,
         page: pageIndex,
@@ -1689,27 +1884,43 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const addFieldAt = useCallback(
-    (type: FieldType, x: number, y: number) => {
-      const field = createField(type, x, y);
+    (type: FieldType, x: number, y: number, overrides?: { key?: string; label?: string }) => {
+      const field = createField(type, x, y, overrides);
       applyFieldUpdate(prev => [...prev, field]);
-      setSelectedKey(field.key);
+      setSelectedFieldId(field.id);
     },
     [createField, applyFieldUpdate]
   );
 
   const addFieldCentered = useCallback(
-    (type: FieldType) => {
+    (type: FieldType, overrides?: { key?: string; label?: string }) => {
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
-      addFieldAt(type, width / 2, height / 2);
+      addFieldAt(type, width / 2, height / 2, overrides);
     },
     [addFieldAt, pageSize]
   );
 
+  const addKeyOptionFieldAt = useCallback(
+    (option: KeyOption, x: number, y: number) => {
+      const mappedType = mapDataTypeToFieldType(option.dataType) || "text";
+      addFieldAt(mappedType, x, y, { key: option.value, label: option.label });
+    },
+    [addFieldAt]
+  );
+
+  const addKeyOptionFieldCentered = useCallback(
+    (option: KeyOption) => {
+      const mappedType = mapDataTypeToFieldType(option.dataType) || "text";
+      addFieldCentered(mappedType, { key: option.value, label: option.label });
+    },
+    [addFieldCentered]
+  );
+
   const updateField = useCallback(
-    (fieldKey: string, changes: Partial<TemplateField>, options?: { commit?: boolean; history?: boolean }) => {
+    (fieldId: string, changes: Partial<TemplateField>, options?: { commit?: boolean; history?: boolean }) => {
       applyFieldUpdate(
-        prev => prev.map(field => (field.key === fieldKey ? { ...field, ...changes } : field)),
+        prev => prev.map(field => (field.id === fieldId ? { ...field, ...changes } : field)),
         options
       );
     },
@@ -1717,10 +1928,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const deleteField = useCallback(
-    (fieldKey: string, options?: { commit?: boolean; history?: boolean }) => {
-      applyFieldUpdate(prev => prev.filter(field => field.key !== fieldKey), options);
-      if (selectedKeyRef.current === fieldKey) {
-        setSelectedKey(null);
+    (fieldId: string, options?: { commit?: boolean; history?: boolean }) => {
+      applyFieldUpdate(prev => prev.filter(field => field.id !== fieldId), options);
+      if (selectedFieldIdRef.current === fieldId) {
+        setSelectedFieldId(null);
       }
     },
     [applyFieldUpdate]
@@ -1728,7 +1939,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
   const clearFields = useCallback(() => {
     applyFieldUpdate(() => []);
-    setSelectedKey(null);
+    setSelectedFieldId(null);
   }, [applyFieldUpdate]);
 
   const undo = useCallback(() => {
@@ -1741,9 +1952,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     setFields(next);
     commitTemplate(next);
     setGuides([]);
-    const activeKey = selectedKeyRef.current;
-    if (activeKey && !next.some(field => field.key === activeKey)) {
-      setSelectedKey(next[0]?.key || null);
+    const activeFieldId = selectedFieldIdRef.current;
+    if (activeFieldId && !next.some(field => field.id === activeFieldId)) {
+      setSelectedFieldId(next[0]?.id || null);
     }
   }, [commitTemplate]);
 
@@ -1757,38 +1968,37 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     setFields(next);
     commitTemplate(next);
     setGuides([]);
-    const activeKey = selectedKeyRef.current;
-    if (activeKey && !next.some(field => field.key === activeKey)) {
-      setSelectedKey(next[0]?.key || null);
+    const activeFieldId = selectedFieldIdRef.current;
+    if (activeFieldId && !next.some(field => field.id === activeFieldId)) {
+      setSelectedFieldId(next[0]?.id || null);
     }
   }, [commitTemplate]);
 
   const duplicateSelectedField = useCallback(() => {
-    const activeKey = selectedKeyRef.current;
-    if (!activeKey) {
+    const activeFieldId = selectedFieldIdRef.current;
+    if (!activeFieldId) {
       return;
     }
-    const source = fieldsRef.current.find(field => field.key === activeKey);
+    const source = fieldsRef.current.find(field => field.id === activeFieldId);
     if (!source) {
       return;
     }
     const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
     const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
-    const key = nextFieldKey(source.type, fieldsRef.current);
     const field: TemplateField = {
       ...source,
-      key,
+      id: createFieldId(),
       x: snapValue(clamp(source.x + 12, 0, width - source.w), snapEnabled),
       y: snapValue(clamp(source.y + 12, 0, height - source.h), snapEnabled)
     };
     applyFieldUpdate(prev => [...prev, field]);
-    setSelectedKey(field.key);
+    setSelectedFieldId(field.id);
   }, [applyFieldUpdate, pageSize, snapEnabled]);
 
   const nudgeSelectedField = useCallback(
     (deltaX: number, deltaY: number) => {
-      const activeKey = selectedKeyRef.current;
-      if (!activeKey) {
+      const activeFieldId = selectedFieldIdRef.current;
+      if (!activeFieldId) {
         return;
       }
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
@@ -1796,7 +2006,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       applyFieldUpdate(prev => {
         let changed = false;
         const next = prev.map(field => {
-          if (field.key !== activeKey) {
+          if (field.id !== activeFieldId) {
             return field;
           }
           const x = clamp(field.x + deltaX, 0, width - field.w);
@@ -1814,14 +2024,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const selectedField = useMemo(
-    () => fields.find(field => field.key === selectedKey) || null,
-    [fields, selectedKey]
+    () => fields.find(field => field.id === selectedFieldId) || null,
+    [fields, selectedFieldId]
   );
   const keyInputState = useMemo(() => {
     if (fieldKeySourceMode === "datasource") {
       return {
         mode: "dropdown" as const,
-        options: datasourceKeyOptionsState.options,
+        options: withComputedKeyOptions(datasourceKeyOptionsState.options),
         loading: datasourceKeyOptionsState.loading,
         error: datasourceKeyOptionsState.error
       };
@@ -1830,7 +2040,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     if (fieldKeySourceMode === "json") {
       return {
         mode: "dropdown" as const,
-        options: jsonKeyOptionsState.options,
+        options: withComputedKeyOptions(jsonKeyOptionsState.options),
         loading: false,
         error: jsonKeyOptionsState.error
       };
@@ -1858,6 +2068,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   }, [keyInputState, selectedField]);
 
   useEffect(() => {
+    if (fieldKeySourceMode === "manual") {
+      setPlacementKeyOption(null);
+      return;
+    }
+    setPlacementType(null);
+  }, [fieldKeySourceMode]);
+
+  useEffect(() => {
     if (!dragState) {
       return;
     }
@@ -1873,14 +2091,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
       const relatedFields = fieldsRef.current.filter(
-        field => field.page === dragState.startField.page && field.key !== dragState.fieldKey
+        field => field.page === dragState.startField.page && field.id !== dragState.fieldId
       );
       const verticalRefs = relatedFields.flatMap(fieldVerticalLines);
       const horizontalRefs = relatedFields.flatMap(fieldHorizontalLines);
       const activeGuides: GuideLine[] = [];
 
       const update = (field: TemplateField): TemplateField => {
-        if (field.key !== dragState.fieldKey) {
+        if (field.id !== dragState.fieldId) {
           return field;
         }
 
@@ -1928,7 +2146,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       };
 
       applyFieldUpdate(
-        prev => prev.map(field => (field.key === dragState.fieldKey ? update(field) : field)),
+        prev => prev.map(field => (field.id === dragState.fieldId ? update(field) : field)),
         { commit: false, history: false }
       );
       setGuides(activeGuides);
@@ -1960,10 +2178,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       event.stopPropagation();
       event.preventDefault();
       pushUndoSnapshot();
-      setSelectedKey(field.key);
+      setSelectedFieldId(field.id);
       setGuides([]);
       setDragState({
-        fieldKey: field.key,
+        fieldId: field.id,
         mode,
         startX: event.clientX,
         startY: event.clientY,
@@ -1986,14 +2204,38 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     [addFieldAt, renderScale]
   );
 
+  const placeKeyOptionAtClientPoint = useCallback(
+    (option: KeyOption, clientX: number, clientY: number) => {
+      if (!overlayRef.current) {
+        return;
+      }
+      const rect = overlayRef.current.getBoundingClientRect();
+      const x = (clientX - rect.left) / (renderScale || 1);
+      const y = (clientY - rect.top) / (renderScale || 1);
+      addKeyOptionFieldAt(option, x, y);
+    },
+    [addKeyOptionFieldAt, renderScale]
+  );
+
   const handlePaletteDragStart = useCallback((event: ReactDragEvent<HTMLButtonElement>, type: FieldType) => {
-    event.dataTransfer.setData(PALETTE_DRAG_TYPE, type);
+    event.dataTransfer.setData(PALETTE_TYPE_DRAG_TYPE, type);
     event.dataTransfer.effectAllowed = "copy";
     setPlacementType(type);
+    setPlacementKeyOption(null);
+  }, []);
+
+  const handleKeyPaletteDragStart = useCallback((event: ReactDragEvent<HTMLButtonElement>, option: KeyOption) => {
+    event.dataTransfer.setData(PALETTE_KEY_DRAG_TYPE, option.value);
+    event.dataTransfer.effectAllowed = "copy";
+    setPlacementType(null);
+    setPlacementKeyOption(option);
   }, []);
 
   const handleOverlayDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    if (!event.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) {
+    if (
+      !event.dataTransfer.types.includes(PALETTE_TYPE_DRAG_TYPE) &&
+      !event.dataTransfer.types.includes(PALETTE_KEY_DRAG_TYPE)
+    ) {
       return;
     }
     event.preventDefault();
@@ -2002,15 +2244,28 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
   const handleOverlayDrop = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      const dropped = event.dataTransfer.getData(PALETTE_DRAG_TYPE);
-      if (!isFieldType(dropped)) {
+      const droppedType = event.dataTransfer.getData(PALETTE_TYPE_DRAG_TYPE);
+      if (isFieldType(droppedType)) {
+        event.preventDefault();
+        placeAtClientPoint(droppedType, event.clientX, event.clientY);
+        setPlacementType(droppedType);
+        setPlacementKeyOption(null);
         return;
       }
-      event.preventDefault();
-      placeAtClientPoint(dropped, event.clientX, event.clientY);
-      setPlacementType(dropped);
+
+      const droppedKey = event.dataTransfer.getData(PALETTE_KEY_DRAG_TYPE).trim();
+      if (droppedKey) {
+        event.preventDefault();
+        const droppedOption = keyInputState.options.find(option => option.value === droppedKey) || {
+          value: droppedKey,
+          label: droppedKey
+        };
+        placeKeyOptionAtClientPoint(droppedOption, event.clientX, event.clientY);
+        setPlacementType(null);
+        setPlacementKeyOption(droppedOption);
+      }
     },
-    [placeAtClientPoint]
+    [placeAtClientPoint, placeKeyOptionAtClientPoint, keyInputState.options]
   );
 
   const handleOverlayPointerDown = useCallback(
@@ -2018,14 +2273,19 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       if (event.target !== overlayRef.current) {
         return;
       }
+      if (placementKeyOption) {
+        event.preventDefault();
+        placeKeyOptionAtClientPoint(placementKeyOption, event.clientX, event.clientY);
+        return;
+      }
       if (placementType) {
         event.preventDefault();
         placeAtClientPoint(placementType, event.clientX, event.clientY);
         return;
       }
-      setSelectedKey(null);
+      setSelectedFieldId(null);
     },
-    [placementType, placeAtClientPoint]
+    [placementType, placementKeyOption, placeAtClientPoint, placeKeyOptionAtClientPoint]
   );
 
   useEffect(() => {
@@ -2039,6 +2299,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
       if (event.key === "Escape") {
         setPlacementType(null);
+        setPlacementKeyOption(null);
         setGuides([]);
         return;
       }
@@ -2069,14 +2330,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         return;
       }
 
-      const activeKey = selectedKeyRef.current;
-      if (!activeKey) {
+      const activeFieldId = selectedFieldIdRef.current;
+      if (!activeFieldId) {
         return;
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        deleteField(activeKey);
+        deleteField(activeFieldId);
         return;
       }
 
@@ -2108,14 +2369,20 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   }, [isViewerMode, enableKeyboardShortcuts, undo, redo, duplicateSelectedField, deleteField, nudgeSelectedField]);
 
   const handleSaveClick = useCallback(() => {
+    if (isViewerMode) {
+      viewerFieldValuesDirtyRef.current = false;
+      commitDataJson(viewerFieldValues, { runSaveAction: true, runOnChangeAction: false });
+      return;
+    }
     commitTemplate(fieldsRef.current, { runSaveAction: true, runOnChangeAction: false });
-  }, [commitTemplate]);
+  }, [isViewerMode, commitDataJson, viewerFieldValues, commitTemplate]);
 
   const setViewerFieldValue = useCallback((fieldKey: string, value: ViewerFieldValue) => {
     setViewerFieldValues(previousValues => {
       if (previousValues[fieldKey] === value) {
         return previousValues;
       }
+      viewerFieldValuesDirtyRef.current = true;
       return { ...previousValues, [fieldKey]: value };
     });
   }, []);
@@ -2174,6 +2441,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
   const handlePlacementSelect = useCallback((type: FieldType) => {
     setPlacementType(current => (current === type ? null : type));
+    setPlacementKeyOption(null);
+  }, []);
+
+  const handleKeyPlacementSelect = useCallback((option: KeyOption) => {
+    setPlacementType(null);
+    setPlacementKeyOption(current => (current?.value === option.value ? null : option));
   }, []);
 
   const applyPageJump = useCallback(() => {
@@ -2194,9 +2467,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const activeViewerSignatureField = useMemo(
     () =>
       fieldsOnPage.find(
-        field => field.type === "signature" && activeViewerSignatureKey !== null && field.key === activeViewerSignatureKey
+        field =>
+          field.type === "signature" &&
+          activeViewerSignatureFieldId !== null &&
+          field.id === activeViewerSignatureFieldId
       ),
-    [fieldsOnPage, activeViewerSignatureKey]
+    [fieldsOnPage, activeViewerSignatureFieldId]
   );
 
   const renderViewerFieldControl = useCallback(
@@ -2223,12 +2499,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             height={Math.max(20, field.h * renderScale)}
             value={signatureValue}
             onFocus={() => {
-              setActiveViewerSignatureKey(field.key);
+              setActiveViewerSignatureFieldId(field.id);
               setViewerSignatureMessage(null);
             }}
             onChange={nextValue => {
               setViewerFieldValue(field.key, nextValue);
-              setActiveViewerSignatureKey(field.key);
+              setActiveViewerSignatureFieldId(field.id);
               setViewerSignatureMessage(null);
             }}
           />
@@ -2270,7 +2546,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   if (!props.dataSource && !isViewerMode) {
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
-        <div className="pdf-template-designer__alert">Configure a data source for PdfTemplateDefinition.</div>
+        <div className="pdf-template-designer__alert">Configure a data source for FormConfiguration.</div>
       </div>
     );
   }
@@ -2328,12 +2604,25 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <option value={1.25}>125%</option>
                 <option value={1.5}>150%</option>
               </select>
+              <button
+                className="pdf-template-designer__button pdf-template-designer__button--primary"
+                onClick={handleSaveClick}
+                type="button"
+              >
+                {saveButtonText}
+              </button>
             </div>
           </div>
           {sigWebState === "loading" ? (
             <div className="pdf-template-designer__status">Loading SigWeb integration...</div>
           ) : null}
           {sigWebError ? <div className="pdf-template-designer__alert">{sigWebError}</div> : null}
+          {showViewerDataJsonBindingWarning ? (
+            <div className="pdf-template-designer__alert">
+              Viewer mode Data JSON is not bound. User edits and signatures will not persist.
+            </div>
+          ) : null}
+          {dataJsonError ? <div className="pdf-template-designer__alert">Data JSON is invalid. {dataJsonError}</div> : null}
           {viewerSignatureMessage ? <div className="pdf-template-designer__alert">{viewerSignatureMessage}</div> : null}
 
           <div className="pdf-template-designer__viewer" ref={viewerRef}>
@@ -2356,9 +2645,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
                   {fieldsOnPage.map(field => (
                     <div
-                      key={field.key}
+                      key={field.id}
                       className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${field.type}${
-                        activeViewerSignatureKey === field.key ? " is-active" : ""
+                        activeViewerSignatureFieldId === field.id ? " is-active" : ""
                       }`}
                       style={{
                         left: field.x * renderScale,
@@ -2368,10 +2657,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       }}
                       onPointerDown={() => {
                         if (field.type === "signature") {
-                          setActiveViewerSignatureKey(field.key);
+                          setActiveViewerSignatureFieldId(field.id);
                           setViewerSignatureMessage(null);
-                        } else if (activeViewerSignatureKey) {
-                          setActiveViewerSignatureKey(null);
+                        } else if (activeViewerSignatureFieldId) {
+                          setActiveViewerSignatureFieldId(null);
                         }
                       }}
                     >
@@ -2429,46 +2718,70 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           <div>
             <div className="pdf-template-designer__section-title">Palette</div>
             <div className="pdf-template-designer__palette">
-              <button
-                className={`pdf-template-designer__button${placementType === "text" ? " is-active" : ""}`}
-                onClick={() => handlePlacementSelect("text")}
-                onDoubleClick={() => addFieldCentered("text")}
-                draggable
-                onDragStart={event => handlePaletteDragStart(event, "text")}
-                type="button"
-              >
-                Text field
-              </button>
-              <button
-                className={`pdf-template-designer__button${placementType === "checkbox" ? " is-active" : ""}`}
-                onClick={() => handlePlacementSelect("checkbox")}
-                onDoubleClick={() => addFieldCentered("checkbox")}
-                draggable
-                onDragStart={event => handlePaletteDragStart(event, "checkbox")}
-                type="button"
-              >
-                Checkbox
-              </button>
-              <button
-                className={`pdf-template-designer__button${placementType === "date" ? " is-active" : ""}`}
-                onClick={() => handlePlacementSelect("date")}
-                onDoubleClick={() => addFieldCentered("date")}
-                draggable
-                onDragStart={event => handlePaletteDragStart(event, "date")}
-                type="button"
-              >
-                Date
-              </button>
-              <button
-                className={`pdf-template-designer__button${placementType === "signature" ? " is-active" : ""}`}
-                onClick={() => handlePlacementSelect("signature")}
-                onDoubleClick={() => addFieldCentered("signature")}
-                draggable
-                onDragStart={event => handlePaletteDragStart(event, "signature")}
-                type="button"
-              >
-                Signature
-              </button>
+              {fieldKeySourceMode === "manual" ? (
+                [
+                  <button
+                    key="palette_text"
+                    className={`pdf-template-designer__button${placementType === "text" ? " is-active" : ""}`}
+                    onClick={() => handlePlacementSelect("text")}
+                    onDoubleClick={() => addFieldCentered("text")}
+                    draggable
+                    onDragStart={event => handlePaletteDragStart(event, "text")}
+                    type="button"
+                  >
+                    Text field
+                  </button>,
+                  <button
+                    key="palette_checkbox"
+                    className={`pdf-template-designer__button${placementType === "checkbox" ? " is-active" : ""}`}
+                    onClick={() => handlePlacementSelect("checkbox")}
+                    onDoubleClick={() => addFieldCentered("checkbox")}
+                    draggable
+                    onDragStart={event => handlePaletteDragStart(event, "checkbox")}
+                    type="button"
+                  >
+                    Checkbox
+                  </button>,
+                  <button
+                    key="palette_date"
+                    className={`pdf-template-designer__button${placementType === "date" ? " is-active" : ""}`}
+                    onClick={() => handlePlacementSelect("date")}
+                    onDoubleClick={() => addFieldCentered("date")}
+                    draggable
+                    onDragStart={event => handlePaletteDragStart(event, "date")}
+                    type="button"
+                  >
+                    Date
+                  </button>,
+                  <button
+                    key="palette_signature"
+                    className={`pdf-template-designer__button${placementType === "signature" ? " is-active" : ""}`}
+                    onClick={() => handlePlacementSelect("signature")}
+                    onDoubleClick={() => addFieldCentered("signature")}
+                    draggable
+                    onDragStart={event => handlePaletteDragStart(event, "signature")}
+                    type="button"
+                  >
+                    Signature
+                  </button>
+                ]
+              ) : (
+                keyInputState.options.map(option => (
+                  <button
+                    key={`palette_${option.value}`}
+                    className={`pdf-template-designer__button${
+                      placementKeyOption?.value === option.value ? " is-active" : ""
+                    }`}
+                    onClick={() => handleKeyPlacementSelect(option)}
+                    onDoubleClick={() => addKeyOptionFieldCentered(option)}
+                    draggable
+                    onDragStart={event => handleKeyPaletteDragStart(event, option)}
+                    type="button"
+                  >
+                    {option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                  </button>
+                ))
+              )}
               <button
                 className="pdf-template-designer__button pdf-template-designer__button--ghost"
                 onClick={clearFields}
@@ -2477,9 +2790,21 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 Clear fields
               </button>
             </div>
-            <div className="pdf-template-designer__status">
-              Click a tool, then click on the PDF to place. Double-click tool for centered insert.
-            </div>
+            {fieldKeySourceMode === "manual" ? (
+              <div className="pdf-template-designer__status">
+                Click a tool, then click on the PDF to place. Double-click tool for centered insert.
+              </div>
+            ) : keyInputState.loading ? (
+              <div className="pdf-template-designer__status">Loading key options...</div>
+            ) : keyInputState.error ? (
+              <div className="pdf-template-designer__alert">{keyInputState.error}</div>
+            ) : keyInputState.options.length === 0 ? (
+              <div className="pdf-template-designer__status">No key options configured for palette.</div>
+            ) : (
+              <div className="pdf-template-designer__status">
+                Drag a key onto the PDF or click a key then click on the PDF to place.
+              </div>
+            )}
           </div>
           ) : null}
 
@@ -2492,12 +2817,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               ) : (
                 fields.map(field => (
                   <button
-                    key={field.key}
+                    key={field.id}
                     className={`pdf-template-designer__field-pill${
-                      selectedKey === field.key ? " is-selected" : ""
+                      selectedFieldId === field.id ? " is-selected" : ""
                     }`}
                     type="button"
-                    onClick={() => setSelectedKey(field.key)}
+                    onClick={() => setSelectedFieldId(field.id)}
                   >
                     <span>{field.label || field.key}</span>
                     <span>{field.type}</span>
@@ -2606,9 +2931,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               </button>
             </div>
           </div>
-          {placementType ? (
+          {placementType || placementKeyOption ? (
             <div className="pdf-template-designer__status">
-              Placing <strong>{placementType}</strong>. Click the page to place.
+              Placing{" "}
+              <strong>
+                {placementKeyOption
+                  ? placementKeyOption.dataType
+                    ? `${placementKeyOption.label} (${placementKeyOption.dataType})`
+                    : placementKeyOption.label
+                  : placementType}
+              </strong>
+              . Click the page to place.
             </div>
           ) : showShortcutHints ? (
             <div className="pdf-template-designer__status">
@@ -2636,7 +2969,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <div
                   className={`pdf-template-designer__overlay${
                     snapEnabled ? " pdf-template-designer__overlay--grid" : ""
-                  }${placementType ? " pdf-template-designer__overlay--placing" : ""}${
+                  }${placementType || placementKeyOption ? " pdf-template-designer__overlay--placing" : ""}${
                     guides.length > 0 ? " pdf-template-designer__overlay--guides" : ""
                   }${outputPdfMode === "acroform" ? " pdf-template-designer__overlay--acroform" : ""
                   }`}
@@ -2659,9 +2992,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   ))}
                   {fieldsOnPage.map(field => (
                     <div
-                      key={field.key}
+                      key={field.id}
                       className={`pdf-template-designer__field pdf-template-designer__field--${field.type}${
-                        selectedKey === field.key ? " is-selected" : ""
+                        selectedFieldId === field.id ? " is-selected" : ""
                       }`}
                       style={{
                         left: field.x * renderScale,
@@ -2698,7 +3031,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                           )
                         ) : (
                           <div className="pdf-template-designer__field-label">
-                            {field.showLabel ? field.label || field.key : selectedKey === field.key ? "(label hidden)" : ""}
+                            {field.showLabel
+                              ? field.label || field.key
+                              : selectedFieldId === field.id
+                                ? "(label hidden)"
+                                : ""}
                           </div>
                         )}
                       </div>
@@ -2729,13 +3066,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     value={selectedField.key}
                     onChange={event => {
                       const nextKey = event.target.value.trim();
-                      if (!nextKey || fields.some(field => field.key === nextKey && field.key !== selectedField.key)) {
+                      if (!nextKey) {
                         return;
                       }
                       const selectedOption = selectedFieldKeyOptions.find(option => option.value === nextKey);
                       const mappedType = mapDataTypeToFieldType(selectedOption?.dataType);
-                      updateField(selectedField.key, mappedType ? { key: nextKey, type: mappedType } : { key: nextKey });
-                      setSelectedKey(nextKey);
+                      updateField(selectedField.id, mappedType ? { key: nextKey, type: mappedType } : { key: nextKey });
                     }}
                   >
                     {selectedFieldKeyOptions.length === 0 ? (
@@ -2753,11 +3089,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     value={selectedField.key}
                     onChange={event => {
                       const nextKey = event.target.value.trim();
-                      if (!nextKey || fields.some(field => field.key === nextKey && field.key !== selectedField.key)) {
+                      if (!nextKey) {
                         return;
                       }
-                      updateField(selectedField.key, { key: nextKey });
-                      setSelectedKey(nextKey);
+                      updateField(selectedField.id, { key: nextKey });
                     }}
                   />
                 )}
@@ -2775,7 +3110,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <input
                   className="pdf-template-designer__input"
                   value={selectedField.label}
-                  onChange={event => updateField(selectedField.key, { label: event.target.value })}
+                  onChange={event => updateField(selectedField.id, { label: event.target.value })}
                 />
               </div>
               ) : null}
@@ -2784,7 +3119,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <input
                   type="checkbox"
                   checked={selectedField.showLabel}
-                  onChange={event => updateField(selectedField.key, { showLabel: event.target.checked })}
+                  onChange={event => updateField(selectedField.id, { showLabel: event.target.checked })}
                 />
                 Show label in flattened output
               </label>
@@ -2795,7 +3130,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <select
                   className="pdf-template-designer__select"
                   value={selectedField.type}
-                  onChange={event => updateField(selectedField.key, { type: event.target.value as FieldType })}
+                  onChange={event => updateField(selectedField.id, { type: event.target.value as FieldType })}
                 >
                   <option value="text">Text</option>
                   <option value="checkbox">Checkbox</option>
@@ -2815,7 +3150,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   value={selectedField.page + 1}
                   onChange={event => {
                     const next = clamp(Math.floor(toNumber(event.target.value, 1)), 1, pageCount);
-                    updateField(selectedField.key, { page: next - 1 });
+                    updateField(selectedField.id, { page: next - 1 });
                   }}
                 />
               </div>
@@ -2827,13 +3162,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   className="pdf-template-designer__input"
                   type="number"
                   value={selectedField.x}
-                  onChange={event => updateField(selectedField.key, { x: toNumber(event.target.value, selectedField.x) })}
+                  onChange={event => updateField(selectedField.id, { x: toNumber(event.target.value, selectedField.x) })}
                 />
                 <input
                   className="pdf-template-designer__input"
                   type="number"
                   value={selectedField.y}
-                  onChange={event => updateField(selectedField.key, { y: toNumber(event.target.value, selectedField.y) })}
+                  onChange={event => updateField(selectedField.id, { y: toNumber(event.target.value, selectedField.y) })}
                 />
               </div>
               ) : null}
@@ -2844,13 +3179,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   className="pdf-template-designer__input"
                   type="number"
                   value={selectedField.w}
-                  onChange={event => updateField(selectedField.key, { w: toNumber(event.target.value, selectedField.w) })}
+                  onChange={event => updateField(selectedField.id, { w: toNumber(event.target.value, selectedField.w) })}
                 />
                 <input
                   className="pdf-template-designer__input"
                   type="number"
                   value={selectedField.h}
-                  onChange={event => updateField(selectedField.key, { h: toNumber(event.target.value, selectedField.h) })}
+                  onChange={event => updateField(selectedField.id, { h: toNumber(event.target.value, selectedField.h) })}
                 />
               </div>
               ) : null}
@@ -2863,7 +3198,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   min={6}
                   value={selectedField.fontSize}
                   onChange={event =>
-                    updateField(selectedField.key, { fontSize: toNumber(event.target.value, selectedField.fontSize) })
+                    updateField(selectedField.id, { fontSize: toNumber(event.target.value, selectedField.fontSize) })
                   }
                 />
               </div>
@@ -2874,7 +3209,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <select
                   className="pdf-template-designer__select"
                   value={selectedField.align}
-                  onChange={event => updateField(selectedField.key, { align: event.target.value as FieldAlign })}
+                  onChange={event => updateField(selectedField.id, { align: event.target.value as FieldAlign })}
                 >
                   <option value="left">Left</option>
                   <option value="center">Center</option>
@@ -2887,7 +3222,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <input
                   type="checkbox"
                   checked={selectedField.required}
-                  onChange={event => updateField(selectedField.key, { required: event.target.checked })}
+                  onChange={event => updateField(selectedField.id, { required: event.target.checked })}
                 />
                 Required
               </label>
@@ -2904,7 +3239,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               {showPropertyDeleteAction ? (
               <button
                 className="pdf-template-designer__button"
-                onClick={() => deleteField(selectedField.key)}
+                onClick={() => deleteField(selectedField.id)}
                 type="button"
               >
                 Delete field

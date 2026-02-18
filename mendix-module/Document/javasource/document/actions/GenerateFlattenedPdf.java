@@ -16,12 +16,15 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import javax.imageio.ImageIO;
 
 import org.apache.pdfbox.cos.COSName;
@@ -48,9 +51,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Generate output PDF from template JSON and data JSON.
- * Supports:
- *  - flattened mode: draws values directly on the page
- *  - acroform mode: creates interactive AcroForm fields
+ * Runtime path is always flattened overlay output:
+ * 1) flatten existing AcroForm fields when present
+ * 2) render template fields from DataJson onto the document
  *
  * Uses PDFBox (Apache 2.0) and Jackson (Apache 2.0). Add both JARs to userlib.
  */
@@ -102,21 +105,13 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
 
         TemplateDefinition template = TemplateDefinition.fromJson(templateJson);
         Map<String, Object> data = TemplateDefinition.parseDataJson(dataJson);
-        String outputMode = template == null ? "flattened" : template.getOutputMode(data);
         boolean hasTemplateFields = template != null && template.fields != null && !template.fields.isEmpty();
 
         byte[] outputBytes;
         try (PDDocument doc = openPdfOrImage(baseBytes)) {
-            if ("acroform".equals(outputMode)) {
-                if (hasTemplateFields) {
-                    validateAcroFormConfiguration(doc, template.fields);
-                    applyAcroFormFields(doc, template.fields, data);
-                }
-            } else {
-                if (hasTemplateFields) {
-                    renderFlattenedFields(doc, template.fields, data);
-                }
-                flattenExistingAcroForm(doc);
+            flattenExistingAcroForm(doc);
+            if (hasTemplateFields) {
+                renderFlattenedFields(doc, template.fields, data);
             }
 
             try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -153,7 +148,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             float y = pageHeight - yTop - h;
 
             try (PDPageContentStream cs = new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
-                renderField(cs, field, data, x, y, w, h);
+                renderField(doc, cs, field, data, x, y, w, h);
             }
         }
     }
@@ -426,30 +421,88 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
     }
 
-    private static void flattenExistingAcroForm(PDDocument doc) throws Exception {
+    private static boolean flattenExistingAcroForm(PDDocument doc) throws Exception {
         if (doc == null || doc.getDocumentCatalog() == null) {
-            return;
+            return false;
         }
 
         PDAcroForm acroForm = doc.getDocumentCatalog().getAcroForm();
         if (acroForm == null) {
-            return;
+            return false;
         }
 
-        try {
-            acroForm.refreshAppearances();
-        } catch (Exception ignored) {
-            // Continue and let PDFBox flatten with existing appearance streams.
+        List<PDField> fieldsForAppearanceRefresh = new ArrayList<>();
+        for (PDField field : acroForm.getFieldTree()) {
+            if (field == null || field instanceof PDSignatureField) {
+                continue;
+            }
+            fieldsForAppearanceRefresh.add(field);
+        }
+
+        if (!fieldsForAppearanceRefresh.isEmpty()) {
+            for (PDField field : fieldsForAppearanceRefresh) {
+                field.getCOSObject().removeItem(COSName.DV);
+                if (!(field instanceof PDTerminalField)) {
+                    continue;
+                }
+                clearWidgetContentAreas(doc, (PDTerminalField) field);
+                for (PDAnnotationWidget widget : ((PDTerminalField) field).getWidgets()) {
+                    if (widget != null && widget.getCOSObject() != null) {
+                        widget.getCOSObject().removeItem(COSName.AP);
+                    }
+                }
+            }
+
+            refreshAcroFormAppearances(acroForm, fieldsForAppearanceRefresh);
         }
 
         acroForm.flatten();
         doc.getDocumentCatalog().setAcroForm(null);
+        return true;
+    }
+
+    private static void clearWidgetContentAreas(PDDocument doc, PDTerminalField terminalField) {
+        if (doc == null || terminalField == null || terminalField.getWidgets() == null) {
+            return;
+        }
+
+        for (PDAnnotationWidget widget : terminalField.getWidgets()) {
+            if (widget == null || widget.getRectangle() == null) {
+                continue;
+            }
+
+            PDPage page = widget.getPage();
+            if (page == null) {
+                continue;
+            }
+
+            PDRectangle rect = widget.getRectangle();
+            float inset = 1f;
+            float clearX = rect.getLowerLeftX() + inset;
+            float clearY = rect.getLowerLeftY() + inset;
+            float clearW = Math.max(0f, rect.getWidth() - inset * 2f);
+            float clearH = Math.max(0f, rect.getHeight() - inset * 2f);
+            if (clearW <= 0f || clearH <= 0f) {
+                continue;
+            }
+
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
+                cs.saveGraphicsState();
+                cs.setNonStrokingColor(255, 255, 255);
+                cs.addRect(clearX, clearY, clearW, clearH);
+                cs.fill();
+                cs.restoreGraphicsState();
+            } catch (Exception ignored) {
+                // Do not block flattening if a widget/page cannot be cleared in a specific runtime.
+            }
+        }
     }
 
     private static void refreshAcroFormAppearances(PDAcroForm acroForm, List<PDField> fieldsForAppearanceRefresh) {
         if (acroForm == null) {
             return;
         }
+        acroForm.setNeedAppearances(false);
         try {
             if (fieldsForAppearanceRefresh != null && !fieldsForAppearanceRefresh.isEmpty()) {
                 try {
@@ -483,7 +536,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         return "GenerateFlattenedPdf";
     }
 
-    private static void renderField(PDPageContentStream cs, TemplateField field, Map<String, Object> data, float x, float y, float w, float h)
+    private static void renderField(PDDocument doc, PDPageContentStream cs, TemplateField field, Map<String, Object> data, float x, float y, float w, float h)
         throws Exception {
         String normalizedType = normalizeFieldType(field.type);
         String value = getFormattedFieldValue(field, data);
@@ -491,6 +544,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         float fontSize = field.fontSize > 0 ? field.fontSize : 10;
 
         if ("checkbox".equals(normalizedType)) {
+            clearFieldContentArea(cs, x, y, w, h);
             cs.addRect(x, y, w, h);
             cs.stroke();
             if (isTruthy(getValue(data, field.key))) {
@@ -507,16 +561,20 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
 
         if ("signature".equals(normalizedType)) {
+            clearFieldContentArea(cs, x, y, w, h);
             cs.addRect(x, y, w, h);
             cs.stroke();
             if (field.showLabel && !labelText.isEmpty()) {
                 drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
             }
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_OBLIQUE, Math.max(8, fontSize));
-            cs.newLineAtOffset(x + 4, y + h / 2);
-            cs.showText("Signature");
-            cs.endText();
+            boolean hasDrawnSignature = drawSignatureImage(cs, doc, getSignatureValue(data, field.key), x, y, w, h);
+            if (!hasDrawnSignature) {
+                cs.beginText();
+                cs.setFont(PDType1Font.HELVETICA_OBLIQUE, Math.max(8, fontSize));
+                cs.newLineAtOffset(x + 4, y + h / 2);
+                cs.showText("Signature");
+                cs.endText();
+            }
             return;
         }
 
@@ -524,6 +582,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             value = normalizePdfText(labelText + ": " + value);
         }
 
+        clearFieldContentArea(cs, x, y, w, h);
         cs.beginText();
         cs.setFont(PDType1Font.HELVETICA, fontSize);
         float textWidth = PDType1Font.HELVETICA.getStringWidth(value) / 1000f * fontSize;
@@ -537,6 +596,22 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         cs.newLineAtOffset(textX, textY);
         cs.showText(value);
         cs.endText();
+    }
+
+    private static void clearFieldContentArea(PDPageContentStream cs, float x, float y, float w, float h) throws Exception {
+        float inset = 1f;
+        float clearX = x + inset;
+        float clearY = y + inset;
+        float clearW = Math.max(0f, w - inset * 2f);
+        float clearH = Math.max(0f, h - inset * 2f);
+        if (clearW <= 0f || clearH <= 0f) {
+            return;
+        }
+        cs.saveGraphicsState();
+        cs.setNonStrokingColor(255, 255, 255);
+        cs.addRect(clearX, clearY, clearW, clearH);
+        cs.fill();
+        cs.restoreGraphicsState();
     }
 
     private static String resolveLabelText(TemplateField field) {
@@ -568,20 +643,228 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         return data.get(key);
     }
 
+    private static Object getSignatureValue(Map<String, Object> data, String key) {
+        Object direct = getValue(data, key);
+        if (!isBlankValue(extractStringFromUnknown(direct))) {
+            return direct;
+        }
+
+        Object fallback = getValue(data, "__signature");
+        if (!isBlankValue(extractStringFromUnknown(fallback))) {
+            return fallback;
+        }
+
+        Object anySignatureLike = findAnySignatureLikeValue(data);
+        if (anySignatureLike != null) {
+            return anySignatureLike;
+        }
+        return direct;
+    }
+
+    private static Object findAnySignatureLikeValue(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            if (entry == null) {
+                continue;
+            }
+            String normalized = normalizeSignatureImageDataUrl(extractStringFromUnknown(entry.getValue()));
+            if (!normalized.isEmpty()) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
     private static String getFormattedFieldValue(TemplateField field, Map<String, Object> data) {
         if (field == null) {
             return "";
         }
         Object rawValue = getValue(data, field.key);
-        if (rawValue == null) {
+        if (rawValue == null || (isComputedFieldKey(field.key) && isBlankValue(rawValue))) {
             String computedValue = resolveComputedFieldValue(field);
-            return computedValue == null ? "" : computedValue;
+            if (computedValue != null) {
+                return computedValue;
+            }
+            if (rawValue == null) {
+                return "";
+            }
         }
 
         if ("date".equals(normalizeFieldType(field.type))) {
             return formatDateLikeValue(rawValue, field.format);
         }
         return normalizePdfText(String.valueOf(rawValue));
+    }
+
+    private static boolean drawSignatureImage(PDPageContentStream cs, PDDocument doc, Object rawValue, float x, float y, float w, float h)
+        throws Exception {
+        PDImageXObject imageXObject = toSignatureImage(doc, rawValue);
+        if (imageXObject == null) {
+            return false;
+        }
+
+        float availableW = Math.max(0f, w - 4f);
+        float availableH = Math.max(0f, h - 4f);
+        if (availableW <= 0f || availableH <= 0f) {
+            return false;
+        }
+
+        float imageW = Math.max(1f, imageXObject.getWidth());
+        float imageH = Math.max(1f, imageXObject.getHeight());
+        float scale = Math.min(availableW / imageW, availableH / imageH);
+        float drawW = imageW * scale;
+        float drawH = imageH * scale;
+        float drawX = x + (w - drawW) / 2f;
+        float drawY = y + (h - drawH) / 2f;
+        cs.drawImage(imageXObject, drawX, drawY, drawW, drawH);
+        return true;
+    }
+
+    private static PDImageXObject toSignatureImage(PDDocument doc, Object rawValue) {
+        if (doc == null || rawValue == null) {
+            return null;
+        }
+        String text = normalizeSignatureImageDataUrl(extractStringFromUnknown(rawValue));
+        if (text.isEmpty()) {
+            return null;
+        }
+
+        byte[] bytes = decodeSignatureBytes(text);
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+
+        try {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image == null) {
+                return null;
+            }
+            return LosslessFactory.createFromImage(doc, image);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static byte[] decodeSignatureBytes(String text) {
+        if (text == null) {
+            return null;
+        }
+        String payload = text.trim();
+        if (payload.isEmpty()) {
+            return null;
+        }
+
+        if (payload.regionMatches(true, 0, "data:", 0, 5)) {
+            int commaIndex = payload.indexOf(',');
+            if (commaIndex < 0) {
+                return null;
+            }
+            String metadata = payload.substring(5, commaIndex).toLowerCase(Locale.ROOT);
+            if (!metadata.contains(";base64")) {
+                return null;
+            }
+            payload = payload.substring(commaIndex + 1);
+        }
+
+        payload = payload.replaceAll("\\s+", "");
+        if (payload.isEmpty()) {
+            return null;
+        }
+
+        if (payload.contains("%")) {
+            payload = URLDecoder.decode(payload, StandardCharsets.UTF_8.name()).replaceAll("\\s+", "");
+        }
+
+        try {
+            return Base64.getMimeDecoder().decode(payload);
+        } catch (IllegalArgumentException ignored) {
+            try {
+                return Base64.getUrlDecoder().decode(payload);
+            } catch (IllegalArgumentException ignoredAgain) {
+                return null;
+            }
+        }
+    }
+
+    private static String extractStringFromUnknown(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String) {
+            return (String) value;
+        }
+        if (value instanceof Map<?, ?>) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            String[] candidateKeys = new String[] { "value", "dataUrl", "imageData", "signature", "result", "data" };
+            for (String key : candidateKeys) {
+                if (!map.containsKey(key)) {
+                    continue;
+                }
+                String extracted = extractStringFromUnknown(map.get(key));
+                if (!isBlankValue(extracted)) {
+                    return extracted;
+                }
+            }
+            return null;
+        }
+        return String.valueOf(value);
+    }
+
+    private static String normalizeSignatureImageDataUrl(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        String normalized = value.trim().replaceAll("^['\"]+|['\"]+$", "");
+        if (normalized.isEmpty()) {
+            return "";
+        }
+
+        if (normalized.regionMatches(true, 0, "data:image/", 0, "data:image/".length())) {
+            return normalized;
+        }
+
+        if (normalized.matches("(?i)^image/\\w+;base64,.*$")) {
+            return "data:" + normalized;
+        }
+
+        int commaIndex = normalized.indexOf(',');
+        String candidateBase64 = commaIndex >= 0 && normalized.substring(0, commaIndex).toLowerCase(Locale.ROOT).contains("base64")
+            ? normalized.substring(commaIndex + 1)
+            : normalized;
+        String compactBase64 = candidateBase64.replaceAll("\\s+", "");
+        if (compactBase64.matches("^[A-Za-z0-9+/=_-]+$")) {
+            return "data:image/png;base64," + compactBase64;
+        }
+        return "";
+    }
+
+    private static boolean isBlankValue(Object value) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof String) {
+            return ((String) value).trim().isEmpty();
+        }
+        return false;
+    }
+
+    private static boolean isComputedFieldKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String normalizedKey = key.trim().toLowerCase(Locale.ROOT);
+        if (normalizedKey.isEmpty()) {
+            return false;
+        }
+        return "__currentdate".equals(normalizedKey)
+            || "__today".equals(normalizedKey)
+            || "__currenttime".equals(normalizedKey)
+            || "__nowtime".equals(normalizedKey)
+            || "__currentdatetime".equals(normalizedKey)
+            || "__now".equals(normalizedKey);
     }
 
     private static String resolveComputedFieldValue(TemplateField field) {

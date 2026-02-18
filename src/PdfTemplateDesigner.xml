@@ -8,7 +8,7 @@
         <property key="dataSource" type="object" isList="true" required="false">
             <caption>Template definition</caption>
             <category>Data</category>
-            <description>Context object for PdfTemplateDefinition. Required in Designer mode; optional in Viewer mode.</description>
+            <description>Context object for FormConfiguration (or equivalent). Required in Designer mode; optional in Viewer mode.</description>
             <properties>
                 <property key="templateJsonAttr" type="attribute" required="true">
                     <caption>Template JSON</caption>
@@ -18,18 +18,18 @@
                         <attributeType name="String" />
                     </attributeTypes>
                 </property>
-                <property key="basePdfOptionsSource" type="datasource" isList="true" required="false">
-                    <caption>Base PDF options</caption>
+                <property key="dataJsonAttr" type="attribute" required="false">
+                    <caption>Data JSON</caption>
                     <category>Template</category>
-                    <description>Datasource that returns PdfTemplate objects selectable for the Base PDF association.</description>
+                    <description>LongString attribute that stores Viewer mode field values as a JSON object. Recommended for Viewer mode so edits/signatures persist.</description>
+                    <attributeTypes>
+                        <attributeType name="String" />
+                    </attributeTypes>
                 </property>
-                <property key="basePdfAssociation" type="association" required="true" selectableObjects="basePdfOptionsSource">
-                    <caption>Base PDF association</caption>
+                <property key="basePdfSource" type="datasource" isList="true" required="false">
+                    <caption>Base PDF datasource</caption>
                     <category>Template</category>
-                    <description>Association from PdfTemplateDefinition to PdfTemplate (FileDocument).</description>
-                    <associationTypes>
-                        <associationType name="Reference" />
-                    </associationTypes>
+                    <description>Datasource that returns the base PDF FileDocument object. The widget uses the first item.</description>
                 </property>
                 <property key="onChangeAction" type="action" required="false">
                     <caption>On change</caption>
@@ -39,7 +39,7 @@
                 <property key="onSaveAction" type="action" required="false">
                     <caption>On save</caption>
                     <category>Actions</category>
-                    <description>Action executed after saving TemplateJson (usually a commit microflow).</description>
+                    <description>Action executed after saving TemplateJson/DataJson (usually a commit microflow).</description>
                 </property>
             </properties>
         </property>
@@ -47,7 +47,7 @@
         <property key="fieldKeySourceMode" type="enumeration" defaultValue="manual" required="true">
             <caption>Field key source</caption>
             <category>Field keys</category>
-            <description>Choose how the Key field is edited in Field properties.</description>
+            <description>Choose how field keys are sourced. In dropdown modes, the Palette lists keys for one-step placement and Field properties uses a key dropdown. Built-in key options are also included: __currentDate, __currentTime, __currentDateTime, __signature.</description>
             <enumerationValues>
                 <enumerationValue key="manual">Manual text input</enumerationValue>
                 <enumerationValue key="datasource">Dropdown from datasource</enumerationValue>
@@ -58,7 +58,7 @@
         <property key="fieldKeyOptionsSource" type="datasource" isList="true" required="false">
             <caption>Field key options datasource</caption>
             <category>Field keys</category>
-            <description>Datasource that returns records containing allowed field key values.</description>
+            <description>Datasource that returns records containing allowed field key values for the key palette and property dropdown. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
         </property>
 
         <property key="fieldKeyOptionAttribute" type="attribute" dataSource="fieldKeyOptionsSource" required="false">
@@ -77,7 +77,7 @@
         <property key="fieldKeyOptionsJson" type="string" multiline="true" required="false">
             <caption>Field key options JSON</caption>
             <category>Field keys</category>
-            <description>JSON array used for dropdown values. Supports string items or objects with key/value and optional label.</description>
+            <description>JSON array used for key palette and property dropdown values. Supports string items or objects with key/value, optional label, and optional type. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
         </property>
 
         <property key="pdfJsWorkerUrl" type="textTemplate" required="false">

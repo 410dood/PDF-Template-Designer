@@ -1,65 +1,64 @@
 ## PdfTemplateDesigner module blueprint
 
-**Domain model**
-- `PdfTemplate` (specialization of `FileDocument`): stores the base/background PDF.
-- `PdfTemplateDefinition`:
+**Terminology mapping**
+- `FormConfiguration` = template/config object (previously `PdfTemplateDefinition`).
+- `ClientDocument` = per-workflow/per-client document instance.
+
+**Recommended domain model (overlay + Data JSON source of truth)**
+- `PdfTemplate` (specialization of `System.FileDocument`): stores the base/background PDF uploaded by admin.
+- `FormConfiguration`:
   - `Name` (String)
   - `TemplateJson` (LongString)
   - `IsActive` (Boolean)
   - `Version` (Integer)
-  - `CreatedDate`/`CreatedBy` (standard audit)
-- Association `PdfTemplateDefinition_PdfTemplate` (1-1, Reference to `PdfTemplate`)
-- `PdfGeneratedDocument` (specialization of `FileDocument`):
-  - Association `PdfGeneratedDocument_TemplateDefinition` (Reference to `PdfTemplateDefinition`)
-  - Association `PdfGeneratedDocument_<BusinessObject>` (Reference, placeholder)
-  - `GeneratedDate`/`GeneratedBy` (audit)
+  - `CreatedDate`/`CreatedBy` (audit)
+  - Association `FormConfiguration_PdfTemplate` (optional Reference to `PdfTemplate`; not needed when `FormConfiguration` itself is a `System.FileDocument` specialization)
+- `ClientDocument` (specialization of `System.FileDocument`, or companion object with FileDocument association):
+  - `DataJson` (LongString, required for Viewer persistence)
+  - `TemplateJsonSnapshot` (LongString, recommended)
+  - `Status` (Enum: `Draft`, `GeneratedEditable`, `InReview`, `Signed`, `Finalized`)
+  - `FinalizedDate`/`FinalizedBy` (audit)
+  - Association `ClientDocument_FormConfiguration` (Reference to `FormConfiguration`)
+  - Association `ClientDocument_<BusinessObject>` (Reference, your business link)
 
-**Microflows**
-1. `ACT_Template_SaveJson`
-   - Inputs: `PdfTemplateDefinition`
-   - Steps: validate JSON if needed, set `TemplateJson`, optionally increment `Version`, commit.
-2. `ACT_Template_Preview` (optional)
-   - Inputs: `PdfTemplateDefinition`
-   - Steps: build sample `dataJson`, call `GenerateFlattenedPdf`, return or store a preview `FileDocument`.
-3. `ACT_Document_GenerateFinal`
-   - Inputs: `<BusinessObject>`, `PdfTemplateDefinition`
-   - Steps:
-     - Build `dataJson` from the business object (e.g., with a microflow or export mapping).
-     - Create `PdfGeneratedDocument` (or any `System.FileDocument` specialization) as target output.
-     - Call `GenerateFlattenedPdf(basePdf, templateJson, dataJson, outputFileDocument)` to write output directly.
-     - Set associations and commit.
-4. `ACT_Document_FinalizeSignedPdf` (optional, recommended when using `outputMode = acroform`)
-   - Inputs: `<EditablePdfFileDocument>`
-   - Steps:
-     - User fills editable fields and signs in Viewer mode.
-     - Create final output `System.FileDocument` specialization.
-     - Call `FinalizePdfToFlattened(inputPdf, outputFileDocument)`.
-     - Commit final output as non-editable archive record.
+**Configuration workflow (admin)**
+1. Admin uploads base PDF to `FormConfiguration` (`FormConfiguration_PdfTemplate`).
+2. Admin opens page with `PdfTemplateDesigner` in `Designer` mode.
+3. Bind `Template JSON` to `FormConfiguration.TemplateJson` and save.
+   - Preferred: bind `Base PDF datasource` to a datasource returning the base FileDocument.
+   - If `FormConfiguration` is a `System.FileDocument` specialization, you can leave datasource empty and the widget will use the context object file as the base PDF.
+4. Activate/version `FormConfiguration`.
 
-**Two-step AcroForm flow (Document module example)**
-Use this when you want:
-1) prefilled editable AcroForm for user input/signature, then
-2) final flattened non-editable archive PDF.
+**Runtime workflow (end user, overlay mode)**
+1. `ACT_ClientDocument_Create`
+   - Inputs: `<BusinessObject>`, active `FormConfiguration`.
+   - Create `ClientDocument`.
+   - Build initial `DataJson` from business data and store on `ClientDocument.DataJson`.
+   - Copy `TemplateJsonSnapshot = FormConfiguration.TemplateJson` (recommended immutable snapshot).
+   - Set `Status = GeneratedEditable`.
+2. `ACT_ClientDocument_OpenViewer`
+   - Input: `ClientDocument`.
+   - Open Viewer page with widget configured:
+     - `View mode = Viewer`
+     - `Template JSON` bound to `ClientDocument.TemplateJsonSnapshot` (or `FormConfiguration.TemplateJson` if no snapshot)
+     - `Data JSON` bound to `ClientDocument.DataJson`
+     - `Base PDF datasource` bound to the base template file
+   - User edits/signs in overlay controls; widget auto-syncs to `ClientDocument.DataJson`.
+   - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF/AcroForm field values.
+   - Set `Status = InReview` while editing.
+3. `ACT_ClientDocument_FinalizeFromDataJson`
+   - Input: `ClientDocument`.
+   - Validate `DataJson` and required fields.
+   - Call `GenerateFlattenedPdf(basePdf, templateJsonSnapshot, dataJson, clientDocumentOutputFile)`.
+   - Ensure template output mode for final generation is `flattened`.
+   - Set `Status = Finalized`, set `FinalizedDate/FinalizedBy`, commit.
 
-1. `Document.ACT_Document_GenerateEditablePdf`
-   - Inputs: `<BusinessObject>`, `Document.PdfTemplateDefinition`
-   - Create `Document.PdfWorkDocument` (specialization of `System.FileDocument`)
-   - Build `dataJson` from `<BusinessObject>` (keys must match template `fields[].key`)
-   - Ensure output mode is AcroForm:
-     - Preferred: set `"meta": { "outputMode": "acroform" }` in `TemplateJson`
-     - Optional override: include `"_outputMode": "acroform"` in `dataJson`
-   - Call:
-     - `GenerateFlattenedPdf(basePdf, templateJson, dataJson, PdfWorkDocument)`
-   - Commit `PdfWorkDocument`
-   - Open page with `OlariPDF` in Viewer mode bound to `PdfWorkDocument`
-
-2. `Document.ACT_Document_FinalizeSignedPdf`
-   - Input: `Document.PdfWorkDocument`
-   - Create `Document.PdfFinalDocument` (specialization of `System.FileDocument`)
-   - Call:
-     - `FinalizePdfToFlattened(PdfWorkDocument, PdfFinalDocument)`
-   - Commit `PdfFinalDocument`
-   - Use `PdfFinalDocument` for storage/export/send (non-editable)
+**Guardrails**
+- Keep `DataJson` on `ClientDocument` only; never on `FormConfiguration`.
+- Treat `FormConfiguration` as design-time only; treat `ClientDocument` as runtime instance only.
+- Regenerate final PDFs from pristine base PDF + template snapshot + current `DataJson`.
+- Do not regenerate from an already finalized PDF as a base.
+- For this architecture, native AcroForm editing/finalization is legacy/optional; preferred path is overlay + `DataJson`.
 
 **Template JSON (definition)**
 The designer widget produces a **template definition JSON** that describes field positions on the PDF.
@@ -99,18 +98,8 @@ The designer widget produces a **template definition JSON** that describes field
 - Optional `showLabel` (Boolean, default `true`): when `outputMode = flattened`, renders label text in the output.
 
 **Template JSON output mode**
-Add `meta.outputMode` to control backend output behavior:
-- `flattened` (default): writes static content directly on pages.
-- `acroform`: creates interactive form fields in the output PDF.
-
-Example:
-```json
-"meta": {
-  "units": "pt",
-  "createdWith": "pdftemplatedesigner",
-  "outputMode": "acroform"
-}
-```
+For the recommended `pdfme`-style runtime workflow, always generate flattened output from `TemplateJson + DataJson`.
+`meta.outputMode` is legacy and should not drive runtime behavior in end-user fill/sign flows.
 
 **Fixed key options JSON (widget config)**
 If you set widget property `Field key source = Dropdown from JSON`, you can paste this in `Field key options JSON`:
@@ -128,10 +117,17 @@ If you set widget property `Field key source = Dropdown from JSON`, you can past
   { "key": "CountyName", "label": "County Name", "type": "String" }
 ]
 ```
-The optional `type` value is displayed in the dropdown and auto-maps widget field types for:
+The optional `type` value is displayed in the key palette/dropdown and auto-maps widget field types for:
 - `Boolean` -> `checkbox`
 - `Date`/`DateTime`/`Time` -> `date`
 - `Signature` -> `signature`
+
+In dropdown key-source modes (`datasource`/`json`), the designer palette lists keys instead of field types so users can drag keys directly onto the document in one step.
+Built-in key options are also included in those dropdown modes:
+- `__currentDate` (`__today` alias)
+- `__currentTime` (`__nowTime` alias)
+- `__currentDateTime` (`__now` alias)
+- `__signature` (signature placeholder)
 
 **Data JSON (values)**
 The Java action expects a **data JSON** object where keys match template field `key` values.
@@ -148,33 +144,44 @@ The Java action expects a **data JSON** object where keys match template field `
 - `checkbox` accepts boolean-like values such as `true/false`, `1/0`, `yes/no`, `on/off`, `checked/unchecked`, `y/n`, and numeric values.
 - `date` supports ISO strings like `2022-11-07T05:00:00.000Z` and can be formatted with field `format` (for example `MM/dd/yyyy`).
 - If a key is missing, the field is left blank.
+- Flattened `signature` fields render image data from `DataJson` when the value is a base64 image string (for example `data:image/png;base64,...`).
 - Reserved computed keys (when not present in `dataJson`):
   - `__currentDate` (alias `__today`) -> current server date.
   - `__currentTime` (alias `__nowTime`) -> current server time.
   - `__currentDateTime` (alias `__now`) -> current server date/time.
+- Reserved computed keys also resolve when the key exists but contains blank text.
+- In widget dropdown key-source modes (`datasource`/`json`), these computed keys are always available in Palette + Key dropdown.
   - `format` is optional and controls rendering (examples: `MM/dd/yyyy`, `HH:mm`, `MM/dd/yyyy hh:mm a`).
+- In widget `View mode = Viewer`, bind widget property `Data JSON` to a LongString attribute to persist end-user edits/signatures from the overlay.
 
 **End-to-end example**
 1. Template JSON field keys: `clientName`, `clientDOB`, `acceptTerms`, `signerName`.
-2. `dataJson` supplies those keys for the business object at generation time.
-3. `GenerateFlattenedPdf` either:
-   - writes values directly onto the base PDF (`outputMode = flattened`), or
-   - creates interactive AcroForm fields (`outputMode = acroform`).
+2. `ClientDocument.DataJson` stores those keys per workflow instance.
+3. Finalization calls `GenerateFlattenedPdf(basePdf, templateJsonSnapshot, dataJson, outputFileDocument)` with `outputMode = flattened`.
 
 **Pages**
-- Template Admin page
-  - Data view on `PdfTemplateDefinition`
+- Form Configuration Admin page
+  - Data view on `FormConfiguration`
   - Place the `PdfTemplateDesigner` widget
-  - Use widget `View mode = Designer` for template configuration or `View mode = Viewer` for end-user document preview/fill.
+  - Use widget `View mode = Designer` for template configuration.
   - Include a toolbar with Save and Activate actions
-- Template List page
-  - Data grid on `PdfTemplateDefinition`
+- Form Configuration List page
+  - Data grid on `FormConfiguration`
   - Columns: Name, Version, IsActive, CreatedDate
   - Buttons: New, Duplicate version, Deactivate/Activate
+- Client Document Viewer page
+  - Data view on `ClientDocument`
+  - Use widget `View mode = Viewer`
+  - Bind:
+    - `Template JSON` -> `ClientDocument.TemplateJsonSnapshot` (or active `FormConfiguration.TemplateJson`)
+    - `Data JSON` -> `ClientDocument.DataJson`
+    - `Base PDF datasource` -> active/snapshotted base template file
+  - Save action commits `ClientDocument` and progresses `Status`.
 
 **Versioning basics**
-- When duplicating a template definition, copy `TemplateJson`, set `Version = previous + 1`, and set `IsActive = false` by default.
-- Keep exactly one active definition per template name with a simple validation microflow.
+- When duplicating a form configuration, copy `TemplateJson`, set `Version = previous + 1`, and set `IsActive = false` by default.
+- Keep exactly one active configuration per template name with a simple validation microflow.
+- Snapshot `TemplateJson` onto each `ClientDocument` at creation time to avoid drift.
 
 **Java action**
 - See `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java`.
@@ -188,9 +195,13 @@ The Java action expects a **data JSON** object where keys match template field `
 - The action can treat the base FileDocument as either:
   - a normal PDF, or
   - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
-- For `outputMode = acroform`, field values from `dataJson` are written into the created AcroForm fields.
-- In `outputMode = acroform`, generation now validates template field config and fails fast for unsupported field types or invalid key/page/size/align.
-- For final non-editable output after user edits/signs, run `FinalizePdfToFlattened` on the editable document.
+- Preferred architecture: overlay Viewer + `ClientDocument.DataJson` source of truth + flattened final output.
+- Runtime generator should always flatten existing AcroForm content first (if any), then render template overlays from `DataJson`.
+- For final non-editable output after user edits/signs in Viewer overlay, use the stored `ClientDocument.DataJson` in your microflow and call `GenerateFlattenedPdf`, then archive the result.
+- `FinalizePdfToFlattened` only flattens values already present inside the PDF file itself.
+- `FinalizePdfToFlattened` is mainly for native AcroForm workflows; it is not required for the overlay + `DataJson` architecture.
+- Flattening now refreshes non-signature appearances and clears stale widget/default appearances first, which avoids light placeholder/ghost text in finalized output.
+- Flatten/render paths also clear field content areas before writing values, so rerunning generation on already-edited documents does not stack old light placeholder text under new values.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.
 - In module settings for `PdfTemplateDesigner`, add Java dependencies:
   - `org.apache.pdfbox:pdfbox:2.0.35`

@@ -6,9 +6,20 @@ import com.mendix.systemwideinterfaces.core.IMendixObject;
 import com.mendix.systemwideinterfaces.core.UserAction;
 
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
 
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.PDPageContentStream.AppendMode;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
+import org.apache.pdfbox.pdmodel.interactive.form.PDField;
+import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
+import org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField;
 
 /**
  * Finalize an editable PDF by flattening all AcroForm fields.
@@ -74,14 +85,91 @@ public class FinalizePdfToFlattened extends UserAction<byte[]> {
             return;
         }
 
-        try {
-            acroForm.refreshAppearances();
-        } catch (Exception ignored) {
-            // Continue and let PDFBox flatten existing appearances.
+        List<PDField> fieldsForAppearanceRefresh = new ArrayList<>();
+        for (PDField field : acroForm.getFieldTree()) {
+            if (field == null || field instanceof PDSignatureField) {
+                continue;
+            }
+            fieldsForAppearanceRefresh.add(field);
+        }
+
+        if (!fieldsForAppearanceRefresh.isEmpty()) {
+            for (PDField field : fieldsForAppearanceRefresh) {
+                field.getCOSObject().removeItem(COSName.DV);
+                if (!(field instanceof PDTerminalField)) {
+                    continue;
+                }
+                clearWidgetContentAreas(doc, (PDTerminalField) field);
+                for (PDAnnotationWidget widget : ((PDTerminalField) field).getWidgets()) {
+                    if (widget != null && widget.getCOSObject() != null) {
+                        widget.getCOSObject().removeItem(COSName.AP);
+                    }
+                }
+            }
+            refreshAcroFormAppearances(acroForm, fieldsForAppearanceRefresh);
         }
 
         acroForm.flatten();
         doc.getDocumentCatalog().setAcroForm(null);
+    }
+
+    private static void clearWidgetContentAreas(PDDocument doc, PDTerminalField terminalField) {
+        if (doc == null || terminalField == null || terminalField.getWidgets() == null) {
+            return;
+        }
+
+        for (PDAnnotationWidget widget : terminalField.getWidgets()) {
+            if (widget == null || widget.getRectangle() == null) {
+                continue;
+            }
+
+            PDPage page = widget.getPage();
+            if (page == null) {
+                continue;
+            }
+
+            PDRectangle rect = widget.getRectangle();
+            float inset = 1f;
+            float clearX = rect.getLowerLeftX() + inset;
+            float clearY = rect.getLowerLeftY() + inset;
+            float clearW = Math.max(0f, rect.getWidth() - inset * 2f);
+            float clearH = Math.max(0f, rect.getHeight() - inset * 2f);
+            if (clearW <= 0f || clearH <= 0f) {
+                continue;
+            }
+
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
+                cs.saveGraphicsState();
+                cs.setNonStrokingColor(255, 255, 255);
+                cs.addRect(clearX, clearY, clearW, clearH);
+                cs.fill();
+                cs.restoreGraphicsState();
+            } catch (Exception ignored) {
+                // Do not block flattening if a widget/page cannot be cleared in a specific runtime.
+            }
+        }
+    }
+
+    private static void refreshAcroFormAppearances(PDAcroForm acroForm, List<PDField> fieldsForAppearanceRefresh) {
+        if (acroForm == null) {
+            return;
+        }
+        acroForm.setNeedAppearances(false);
+        try {
+            if (fieldsForAppearanceRefresh != null && !fieldsForAppearanceRefresh.isEmpty()) {
+                try {
+                    // PDFBox 2.0.x overload that lets us skip signature fields.
+                    java.lang.reflect.Method refreshSubset = PDAcroForm.class.getMethod("refreshAppearances", List.class);
+                    refreshSubset.invoke(acroForm, fieldsForAppearanceRefresh);
+                    return;
+                } catch (NoSuchMethodException ignored) {
+                    // Fallback to full refresh below.
+                }
+            }
+            acroForm.refreshAppearances();
+        } catch (Exception ignored) {
+            // Do not block flattening if appearance refresh fails in a specific runtime.
+        }
     }
 
     private static byte[] readAllBytes(java.io.InputStream inputStream) throws Exception {
