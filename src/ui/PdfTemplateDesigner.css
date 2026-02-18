@@ -58,7 +58,7 @@
 }
 
 .pdf-template-designer__sidebar {
-  align-items: stretch;
+  align-items: center;
 }
 
 .pdf-template-designer__properties {
@@ -89,6 +89,33 @@
   border-radius: 8px;
   padding: 8px 10px;
   box-shadow: none;
+}
+
+.pdf-template-designer__toolbar--strip {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.pdf-template-designer__action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+  border-right: 1px solid var(--pd-border);
+}
+
+.pdf-template-designer__action-group:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.pdf-template-designer__action-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--pd-muted);
+  margin-right: 2px;
 }
 
 .pdf-template-designer__toolbar-group {
@@ -207,6 +234,8 @@
   max-height: none;
   overflow: auto;
   padding-right: 0;
+  width: 100%;
+  align-items: center;
 }
 
 .pdf-template-designer__button {
@@ -251,21 +280,21 @@
 }
 
 .pdf-template-designer__palette-tool {
-  display: grid;
-  gap: 4px;
-  justify-items: center;
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
   align-items: center;
   text-align: center;
-  min-height: 52px;
-  width: 100%;
-  padding: 6px 4px;
+  min-height: 44px;
+  width: 52px;
+  padding: 0;
 }
 
 .pdf-template-designer__palette-tool-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
+  width: 28px;
   height: 18px;
   border-radius: 4px;
   border: 1px solid var(--pd-border);
@@ -274,13 +303,28 @@
   background: #fff;
 }
 
-.pdf-template-designer__palette-tool-label {
-  font-size: 10px;
-  line-height: 1.1;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.pdf-template-designer__palette-tool::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #1f2430;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 4px 6px;
+  border-radius: 4px;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 10;
+}
+
+.pdf-template-designer__palette-tool:hover::after,
+.pdf-template-designer__palette-tool:focus-visible::after {
+  opacity: 1;
 }
 
 .pdf-template-designer__palette .pdf-template-designer__button--ghost {
@@ -310,12 +354,59 @@
   cursor: pointer;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
 }
 
 .pdf-template-designer__field-pill.is-selected {
   border-color: var(--pd-accent);
   color: var(--pd-accent);
+}
+
+.pdf-template-designer__field-pill.is-drop-target {
+  box-shadow: 0 0 0 2px rgba(31, 142, 106, 0.2);
+}
+
+.pdf-template-designer__field-pill-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pdf-template-designer__field-pill-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-template-designer__field-pill-key {
+  font-size: 11px;
+  color: var(--pd-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-template-designer__field-pill-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.pdf-template-designer__field-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pd-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pd-muted);
+  background: #f9fafb;
 }
 
 .pdf-template-designer__field {
@@ -681,6 +772,12 @@
     justify-content: flex-start;
   }
 
+  .pdf-template-designer__action-group {
+    border-right: 0;
+    padding-right: 0;
+    flex-wrap: wrap;
+  }
+
   .pdf-template-designer__toolbar-group {
     flex-wrap: wrap;
   }
@@ -702,13 +799,21 @@
   .pdf-template-designer__sidebar {
     flex-direction: row;
     overflow-x: auto;
+    align-items: flex-start;
   }
 
   .pdf-template-designer__palette {
     flex-direction: row;
+    justify-content: flex-start;
   }
 
   .pdf-template-designer__palette-tool {
-    min-width: 84px;
+    min-width: 52px;
+  }
+
+  .pdf-template-designer__palette-tool::after {
+    left: 50%;
+    top: calc(100% + 6px);
+    transform: translateX(-50%);
   }
 }

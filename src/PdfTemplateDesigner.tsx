@@ -326,6 +326,25 @@ function withComputedKeyOptions(options: KeyOption[]): KeyOption[] {
   return dedupeKeyOptions([...options, ...BUILTIN_COMPUTED_KEY_OPTIONS]);
 }
 
+function paletteGlyphFromOption(option: KeyOption): string {
+  const source = toTrimmedString(option.label || option.value);
+  if (!source) {
+    return "K";
+  }
+  const tokens = source
+    .replace(/__+/g, " ")
+    .split(/[\s_-]+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return source.slice(0, 2).toUpperCase();
+  }
+  if (tokens.length === 1) {
+    return tokens[0].slice(0, 2).toUpperCase();
+  }
+  return `${tokens[0][0]}${tokens[1][0]}`.toUpperCase();
+}
+
 function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?: string } {
   if (!text || !text.trim()) {
     return { options: [] };
@@ -1205,6 +1224,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const [pageThumbs, setPageThumbs] = useState<Record<number, string>>({});
   const [isBuildingThumbs, setIsBuildingThumbs] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState("1");
+  const [draggedFieldListItemId, setDraggedFieldListItemId] = useState<string | null>(null);
+  const [fieldListDropTargetId, setFieldListDropTargetId] = useState<string | null>(null);
   const imageObjectUrlRef = useRef<string | null>(null);
   const dataSourceItem = useMemo(() => props.dataSource?.[0], [props.dataSource]);
   const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
@@ -2378,6 +2399,65 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     commitTemplate(fieldsRef.current, { runSaveAction: true, runOnChangeAction: false });
   }, [isViewerMode, commitDataJson, viewerFieldValues, commitTemplate]);
 
+  const handleReloadTemplateClick = useCallback(() => {
+    if (isViewerMode) {
+      return;
+    }
+    const parsed = parseTemplateJson(templateJsonText);
+    if (parsed.error) {
+      setJsonError(parsed.error);
+      return;
+    }
+    setJsonError(null);
+    setFields(parsed.fields);
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setGuides([]);
+    setSelectedFieldId(parsed.fields[0]?.id || null);
+    lastLoadedJsonRef.current = templateJsonText;
+  }, [isViewerMode, templateJsonText]);
+
+  const handleExportTemplateClick = useCallback(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+    const payload = buildTemplateJson(fieldsRef.current, basePdfId, outputPdfMode);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `template-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [basePdfId, outputPdfMode]);
+
+  const reorderFieldListItem = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (!sourceId || !targetId || sourceId === targetId) {
+        return;
+      }
+      applyFieldUpdate(prev => {
+        const fromIndex = prev.findIndex(field => field.id === sourceId);
+        const toIndex = prev.findIndex(field => field.id === targetId);
+        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+          return prev;
+        }
+        const next = [...prev];
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, moved);
+        return next;
+      });
+    },
+    [applyFieldUpdate]
+  );
+
+  const handleFieldListDragEnd = useCallback(() => {
+    setDraggedFieldListItemId(null);
+    setFieldListDropTargetId(null);
+  }, []);
+
   const setViewerFieldValue = useCallback((fieldKey: string, value: ViewerFieldValue) => {
     setViewerFieldValues(previousValues => {
       if (previousValues[fieldKey] === value) {
@@ -2726,6 +2806,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementType === "text" ? " is-active" : ""
                     }`}
+                    title="Text field"
+                    aria-label="Text field"
+                    data-tooltip="Text field"
                     onClick={() => handlePlacementSelect("text")}
                     onDoubleClick={() => addFieldCentered("text")}
                     draggable
@@ -2733,13 +2816,15 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     type="button"
                   >
                     <span className="pdf-template-designer__palette-tool-icon">T</span>
-                    <span className="pdf-template-designer__palette-tool-label">Text</span>
                   </button>,
                   <button
                     key="palette_checkbox"
                     className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementType === "checkbox" ? " is-active" : ""
                     }`}
+                    title="Checkbox"
+                    aria-label="Checkbox"
+                    data-tooltip="Checkbox"
                     onClick={() => handlePlacementSelect("checkbox")}
                     onDoubleClick={() => addFieldCentered("checkbox")}
                     draggable
@@ -2747,13 +2832,15 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     type="button"
                   >
                     <span className="pdf-template-designer__palette-tool-icon">[]</span>
-                    <span className="pdf-template-designer__palette-tool-label">Check</span>
                   </button>,
                   <button
                     key="palette_date"
                     className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementType === "date" ? " is-active" : ""
                     }`}
+                    title="Date field"
+                    aria-label="Date field"
+                    data-tooltip="Date field"
                     onClick={() => handlePlacementSelect("date")}
                     onDoubleClick={() => addFieldCentered("date")}
                     draggable
@@ -2761,13 +2848,15 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     type="button"
                   >
                     <span className="pdf-template-designer__palette-tool-icon">DT</span>
-                    <span className="pdf-template-designer__palette-tool-label">Date</span>
                   </button>,
                   <button
                     key="palette_signature"
                     className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementType === "signature" ? " is-active" : ""
                     }`}
+                    title="Signature field"
+                    aria-label="Signature field"
+                    data-tooltip="Signature field"
                     onClick={() => handlePlacementSelect("signature")}
                     onDoubleClick={() => addFieldCentered("signature")}
                     draggable
@@ -2775,7 +2864,6 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     type="button"
                   >
                     <span className="pdf-template-designer__palette-tool-icon">SIG</span>
-                    <span className="pdf-template-designer__palette-tool-label">Sign</span>
                   </button>
                 ]
               ) : (
@@ -2785,30 +2873,23 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     className={`pdf-template-designer__button pdf-template-designer__palette-tool${
                       placementKeyOption?.value === option.value ? " is-active" : ""
                     }`}
+                    title={option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                    aria-label={option.dataType ? `${option.label} (${option.dataType})` : option.label}
+                    data-tooltip={option.dataType ? `${option.label} (${option.dataType})` : option.label}
                     onClick={() => handleKeyPlacementSelect(option)}
                     onDoubleClick={() => addKeyOptionFieldCentered(option)}
                     draggable
                     onDragStart={event => handleKeyPaletteDragStart(event, option)}
                     type="button"
                   >
-                    <span className="pdf-template-designer__palette-tool-icon">K</span>
-                    <span className="pdf-template-designer__palette-tool-label">
-                      {option.dataType ? `${option.label} (${option.dataType})` : option.label}
-                    </span>
+                    <span className="pdf-template-designer__palette-tool-icon">{paletteGlyphFromOption(option)}</span>
                   </button>
                 ))
               )}
-              <button
-                className="pdf-template-designer__button pdf-template-designer__button--ghost"
-                onClick={clearFields}
-                type="button"
-              >
-                Clear fields
-              </button>
             </div>
             {fieldKeySourceMode === "manual" ? (
               <div className="pdf-template-designer__status">
-                Click a tool, then click on the PDF to place. Double-click tool for centered insert.
+                Icon rail: click to select, then click the PDF to place.
               </div>
             ) : keyInputState.loading ? (
               <div className="pdf-template-designer__status">Loading key options...</div>
@@ -2818,7 +2899,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               <div className="pdf-template-designer__status">No key options configured for palette.</div>
             ) : (
               <div className="pdf-template-designer__status">
-                Drag a key onto the PDF or click a key then click on the PDF to place.
+                Hover icons for full key names. Drag or click to place.
               </div>
             )}
           </div>
@@ -2828,8 +2909,29 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         ) : null}
 
         <section className="pdf-template-designer__canvas">
-          <div className="pdf-template-designer__toolbar">
-            <div className="pdf-template-designer__toolbar-group">
+          <div className="pdf-template-designer__toolbar pdf-template-designer__toolbar--strip">
+            <div className="pdf-template-designer__action-group">
+              <span className="pdf-template-designer__action-label">Template</span>
+              <button className="pdf-template-designer__button" type="button" onClick={handleReloadTemplateClick}>
+                Load
+              </button>
+              <button className="pdf-template-designer__button" onClick={clearFields} type="button">
+                Reset
+              </button>
+              <button className="pdf-template-designer__button" onClick={handleExportTemplateClick} type="button">
+                Export
+              </button>
+              <button
+                className="pdf-template-designer__button pdf-template-designer__button--primary"
+                onClick={handleSaveClick}
+                type="button"
+              >
+                {saveButtonText}
+              </button>
+            </div>
+
+            <div className="pdf-template-designer__action-group">
+              <span className="pdf-template-designer__action-label">View</span>
               <button
                 className="pdf-template-designer__button"
                 onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
@@ -2865,8 +2967,20 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   }}
                 />
               </div>
+              <select
+                className="pdf-template-designer__select"
+                value={zoom}
+                onChange={event => setZoom(Number(event.target.value))}
+              >
+                <option value={0.75}>75%</option>
+                <option value={1}>100%</option>
+                <option value={1.25}>125%</option>
+                <option value={1.5}>150%</option>
+              </select>
             </div>
-            <div className="pdf-template-designer__toolbar-group">
+
+            <div className="pdf-template-designer__action-group">
+              <span className="pdf-template-designer__action-label">Edit</span>
               <button className="pdf-template-designer__button" type="button" onClick={undo} disabled={undoDisabled}>
                 Undo
               </button>
@@ -2881,19 +2995,6 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 />
                 Snap
               </label>
-              <select
-                className="pdf-template-designer__select"
-                value={zoom}
-                onChange={event => setZoom(Number(event.target.value))}
-              >
-                <option value={0.75}>75%</option>
-                <option value={1}>100%</option>
-                <option value={1.25}>125%</option>
-                <option value={1.5}>150%</option>
-              </select>
-              <button className="pdf-template-designer__button pdf-template-designer__button--primary" onClick={handleSaveClick} type="button">
-                {saveButtonText}
-              </button>
             </div>
           </div>
           {placementType || placementKeyOption ? (
@@ -3030,16 +3131,46 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       key={field.id}
                       className={`pdf-template-designer__field-pill${
                         selectedFieldId === field.id ? " is-selected" : ""
-                      }`}
+                      }${fieldListDropTargetId === field.id ? " is-drop-target" : ""}`}
                       type="button"
                       onClick={() => setSelectedFieldId(field.id)}
+                      draggable
+                      onDragStart={event => {
+                        event.dataTransfer.effectAllowed = "move";
+                        setDraggedFieldListItemId(field.id);
+                        setFieldListDropTargetId(field.id);
+                      }}
+                      onDragOver={event => {
+                        event.preventDefault();
+                        if (!draggedFieldListItemId) {
+                          return;
+                        }
+                        if (fieldListDropTargetId !== field.id) {
+                          setFieldListDropTargetId(field.id);
+                        }
+                      }}
+                      onDrop={event => {
+                        event.preventDefault();
+                        if (draggedFieldListItemId) {
+                          reorderFieldListItem(draggedFieldListItemId, field.id);
+                        }
+                        handleFieldListDragEnd();
+                      }}
+                      onDragEnd={handleFieldListDragEnd}
                     >
-                      <span>{field.label || field.key}</span>
-                      <span>{field.type}</span>
+                      <span className="pdf-template-designer__field-pill-main">
+                        <span className="pdf-template-designer__field-pill-label">{field.label || field.key}</span>
+                        <span className="pdf-template-designer__field-pill-key">{field.key}</span>
+                      </span>
+                      <span className="pdf-template-designer__field-pill-badges">
+                        <span className="pdf-template-designer__field-badge">{field.type}</span>
+                        <span className="pdf-template-designer__field-badge">P{field.page + 1}</span>
+                      </span>
                     </button>
                   ))
                 )}
               </div>
+              {fields.length > 1 ? <div className="pdf-template-designer__status">Drag items to reorder.</div> : null}
             </div>
             ) : null}
 

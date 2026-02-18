@@ -774,7 +774,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
 
         if (payload.contains("%")) {
-            payload = URLDecoder.decode(payload, StandardCharsets.UTF_8.name()).replaceAll("\\s+", "");
+            payload = URLDecoder.decode(payload, StandardCharsets.UTF_8).replaceAll("\\s+", "");
         }
 
         try {
