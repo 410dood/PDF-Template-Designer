@@ -18,11 +18,11 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import javax.imageio.ImageIO;
@@ -32,19 +32,15 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDPageContentStream.AppendMode;
-import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
-import org.apache.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox;
 import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField;
-import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,6 +58,10 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
     private static final DateTimeFormatter DEFAULT_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yyyy", Locale.US);
     private static final DateTimeFormatter DEFAULT_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm", Locale.US);
     private static final DateTimeFormatter DEFAULT_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm", Locale.US);
+    private static final Pattern MULTI_VARIABLE_TOKEN_PATTERN = Pattern.compile("\\{\\s*([^{}]+?)\\s*\\}");
+    private static final float FIELD_TEXT_HORIZONTAL_PADDING = 2f;
+    private static final float FIELD_TEXT_VERTICAL_PADDING = 2f;
+    private static final float FIELD_TEXT_LINE_HEIGHT_MULTIPLIER = 1.2f;
 
     private final IMendixObject basePdf;
     private final IMendixObject outputFileDocument;
@@ -151,252 +151,6 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
                 renderField(doc, cs, field, data, x, y, w, h);
             }
         }
-    }
-
-    private static void applyAcroFormFields(PDDocument doc, List<TemplateField> fields, Map<String, Object> data) throws Exception {
-        PDAcroForm acroForm = getOrCreateAcroForm(doc);
-        Set<String> usedNames = new HashSet<>();
-        boolean hasSignatureField = false;
-        List<PDField> fieldsForAppearanceRefresh = new ArrayList<>();
-        for (PDField existingField : acroForm.getFieldTree()) {
-            if (existingField != null && existingField.getFullyQualifiedName() != null) {
-                usedNames.add(existingField.getFullyQualifiedName());
-            }
-        }
-
-        for (TemplateField field : fields) {
-            if (field == null) {
-                continue;
-            }
-
-            int pageIndex = Math.max(0, field.page);
-            if (pageIndex >= doc.getNumberOfPages()) {
-                continue;
-            }
-
-            PDPage page = doc.getPage(pageIndex);
-            PDRectangle box = page.getMediaBox();
-            float pageHeight = box.getHeight();
-            float x = Math.max(0, field.x);
-            float yTop = Math.max(0, field.y);
-            float w = Math.max(4, field.w);
-            float h = Math.max(4, field.h);
-            float y = pageHeight - yTop - h;
-
-            drawAcroFieldLabel(doc, page, field, x, y, w, h);
-            String baseName = normalizeFieldName(field.key);
-            String fieldName = nextUniqueFieldName(baseName, usedNames);
-            PDField acroField = createAcroField(doc, acroForm, field, fieldName, page, x, y, w, h);
-            if (acroField == null) {
-                continue;
-            }
-
-            if (field.required) {
-                acroField.setRequired(true);
-            }
-
-            acroForm.getFields().add(acroField);
-            applyAcroFieldValue(acroField, field, data);
-            String normalizedType = normalizeFieldType(field.type);
-            if ("signature".equals(normalizedType)) {
-                hasSignatureField = true;
-            } else {
-                fieldsForAppearanceRefresh.add(acroField);
-            }
-        }
-
-        if (hasSignatureField) {
-            acroForm.setSignaturesExist(true);
-            // Hint to PDF readers to apply incremental updates for signing.
-            acroForm.setAppendOnly(true);
-        }
-        refreshAcroFormAppearances(acroForm, fieldsForAppearanceRefresh);
-    }
-
-    private static PDAcroForm getOrCreateAcroForm(PDDocument doc) {
-        PDAcroForm acroForm = doc.getDocumentCatalog().getAcroForm();
-        if (acroForm == null) {
-            acroForm = new PDAcroForm(doc);
-            doc.getDocumentCatalog().setAcroForm(acroForm);
-        }
-
-        PDResources resources = acroForm.getDefaultResources();
-        if (resources == null) {
-            resources = new PDResources();
-            acroForm.setDefaultResources(resources);
-        }
-        resources.put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA);
-        if (acroForm.getDefaultAppearance() == null || acroForm.getDefaultAppearance().trim().isEmpty()) {
-            acroForm.setDefaultAppearance("/Helv 10 Tf 0 g");
-        }
-        // Generate concrete appearance streams so values render as field values (not hint-like placeholders).
-        acroForm.setNeedAppearances(false);
-        return acroForm;
-    }
-
-    private static PDField createAcroField(
-        PDDocument doc,
-        PDAcroForm acroForm,
-        TemplateField templateField,
-        String fieldName,
-        PDPage page,
-        float x,
-        float y,
-        float w,
-        float h
-    ) throws Exception {
-        String normalizedType = normalizeFieldType(templateField.type);
-        if (normalizedType == null) {
-            throw new IllegalArgumentException("Unsupported acroform field type: " + String.valueOf(templateField.type));
-        }
-        PDTerminalField terminalField;
-        if ("checkbox".equals(normalizedType)) {
-            PDCheckBox checkBox = new PDCheckBox(acroForm);
-            checkBox.setPartialName(fieldName);
-            checkBox.setReadOnly(false);
-            terminalField = checkBox;
-        } else if ("signature".equals(normalizedType)) {
-            PDSignatureField signatureField = new PDSignatureField(acroForm);
-            signatureField.setPartialName(fieldName);
-            signatureField.setReadOnly(false);
-            terminalField = signatureField;
-        } else {
-            PDTextField textField = new PDTextField(acroForm);
-            textField.setPartialName(fieldName);
-            textField.setReadOnly(false);
-            textField.setQ(alignmentToQ(templateField.align));
-            float fontSize = templateField.fontSize > 0 ? templateField.fontSize : 10f;
-            textField.setDefaultAppearance(String.format(Locale.ROOT, "/Helv %.2f Tf 0 g", fontSize));
-            terminalField = textField;
-        }
-
-        PDAnnotationWidget widget;
-        if (terminalField.getWidgets().isEmpty()) {
-            widget = new PDAnnotationWidget();
-            widget.setParent(terminalField);
-            terminalField.getWidgets().add(widget);
-        } else {
-            widget = terminalField.getWidgets().get(0);
-        }
-        configureWidget(widget, page, x, y, w, h);
-        if ("signature".equals(normalizedType)) {
-            drawSignaturePlaceholder(doc, page, x, y, w, h, templateField.label);
-        }
-        return terminalField;
-    }
-
-    private static void configureWidget(PDAnnotationWidget widget, PDPage page, float x, float y, float w, float h) throws Exception {
-        widget.setRectangle(new PDRectangle(x, y, w, h));
-        widget.setPage(page);
-        widget.setPrinted(true);
-        PDBorderStyleDictionary border = new PDBorderStyleDictionary();
-        border.setWidth(1f);
-        widget.setBorderStyle(border);
-        if (!page.getAnnotations().contains(widget)) {
-            page.getAnnotations().add(widget);
-        }
-    }
-
-    private static void drawSignaturePlaceholder(PDDocument doc, PDPage page, float x, float y, float w, float h, String label) throws Exception {
-        String placeholder = (label == null || label.trim().isEmpty()) ? "Sign here" : label.trim();
-        try (PDPageContentStream cs = new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
-            cs.addRect(x, y, w, h);
-            cs.stroke();
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_OBLIQUE, 9f);
-            cs.newLineAtOffset(x + 4f, y + Math.max(4f, h / 2f - 3f));
-            cs.showText(normalizePdfText(placeholder));
-            cs.endText();
-        }
-    }
-
-    private static void drawAcroFieldLabel(PDDocument doc, PDPage page, TemplateField field, float x, float y, float w, float h)
-        throws Exception {
-        if (field == null || !field.showLabel) {
-            return;
-        }
-
-        String labelText = resolveLabelText(field);
-        if (labelText.isEmpty()) {
-            return;
-        }
-
-        String normalizedType = normalizeFieldType(field.type);
-        if ("signature".equals(normalizedType)) {
-            // Signature label is already rendered as placeholder inside the signature box.
-            return;
-        }
-
-        float fontSize = Math.max(8f, field.fontSize > 0 ? field.fontSize : 10f);
-        float labelX = x;
-        float labelY = y + h + 2f;
-        if ("checkbox".equals(normalizedType)) {
-            labelX = x + w + 4f;
-            labelY = y + Math.max(1f, (h - fontSize) / 2f);
-        }
-
-        try (PDPageContentStream cs = new PDPageContentStream(doc, page, AppendMode.APPEND, true, true)) {
-            drawLabelText(cs, labelText, labelX, labelY, fontSize);
-        }
-    }
-
-    private static void applyAcroFieldValue(PDField acroField, TemplateField templateField, Map<String, Object> data) throws Exception {
-        if (acroField == null || templateField == null) {
-            return;
-        }
-
-        String normalizedType = normalizeFieldType(templateField.type);
-        if ("signature".equals(normalizedType)) {
-            return;
-        }
-
-        if ("checkbox".equals(normalizedType) && acroField instanceof PDCheckBox) {
-            PDCheckBox checkBox = (PDCheckBox) acroField;
-            if (isTruthy(getValue(data, templateField.key))) {
-                checkBox.check();
-            } else {
-                checkBox.unCheck();
-            }
-            return;
-        }
-
-        if (acroField instanceof PDTextField) {
-            ((PDTextField) acroField).setValue(getFormattedFieldValue(templateField, data));
-        }
-    }
-
-    private static int alignmentToQ(String align) {
-        if (align == null) {
-            return 0;
-        }
-        String normalized = align.trim().toLowerCase(Locale.ROOT);
-        if ("center".equals(normalized)) {
-            return 1;
-        }
-        if ("right".equals(normalized)) {
-            return 2;
-        }
-        return 0;
-    }
-
-    private static String normalizeFieldName(String key) {
-        String source = key == null ? "" : key.trim();
-        if (source.isEmpty()) {
-            return "field";
-        }
-        String normalized = source.replaceAll("[^A-Za-z0-9_\\-.]", "_");
-        return normalized.isEmpty() ? "field" : normalized;
-    }
-
-    private static String nextUniqueFieldName(String baseName, Set<String> usedNames) {
-        String candidate = baseName;
-        int suffix = 1;
-        while (usedNames.contains(candidate)) {
-            suffix += 1;
-            candidate = baseName + "_" + suffix;
-        }
-        usedNames.add(candidate);
-        return candidate;
     }
 
     private static PDDocument openPdfOrImage(byte[] sourceBytes) throws Exception {
@@ -583,19 +337,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
 
         clearFieldContentArea(cs, x, y, w, h);
-        cs.beginText();
-        cs.setFont(PDType1Font.HELVETICA, fontSize);
-        float textWidth = PDType1Font.HELVETICA.getStringWidth(value) / 1000f * fontSize;
-        float textX = x + 2;
-        if ("center".equals(field.align)) {
-            textX = x + (w - textWidth) / 2f;
-        } else if ("right".equals(field.align)) {
-            textX = x + w - textWidth - 2;
-        }
-        float textY = y + (h - fontSize) / 2f;
-        cs.newLineAtOffset(textX, textY);
-        cs.showText(value);
-        cs.endText();
+        drawBoundedText(cs, value, field, x, y, w, h, fontSize);
     }
 
     private static void clearFieldContentArea(PDPageContentStream cs, float x, float y, float w, float h) throws Exception {
@@ -612,6 +354,185 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         cs.addRect(clearX, clearY, clearW, clearH);
         cs.fill();
         cs.restoreGraphicsState();
+    }
+
+    private static void drawBoundedText(PDPageContentStream cs, String value, TemplateField field, float x, float y, float w, float h, float fontSize)
+        throws Exception {
+        String text = normalizePdfText(value);
+        if (text.isEmpty()) {
+            return;
+        }
+
+        float innerX = x + FIELD_TEXT_HORIZONTAL_PADDING;
+        float innerY = y + FIELD_TEXT_VERTICAL_PADDING;
+        float innerW = Math.max(0f, w - FIELD_TEXT_HORIZONTAL_PADDING * 2f);
+        float innerH = Math.max(0f, h - FIELD_TEXT_VERTICAL_PADDING * 2f);
+        if (innerW <= 0f || innerH <= 0f) {
+            return;
+        }
+
+        List<String> wrappedLines = wrapTextToWidth(text, fontSize, innerW);
+        if (wrappedLines.isEmpty()) {
+            return;
+        }
+
+        float lineHeight = Math.max(fontSize, fontSize * FIELD_TEXT_LINE_HEIGHT_MULTIPLIER);
+        int maxLines = Math.max(1, (int) Math.floor(innerH / lineHeight));
+        if (wrappedLines.size() > maxLines) {
+            wrappedLines = new ArrayList<>(wrappedLines.subList(0, maxLines));
+            int lastIndex = wrappedLines.size() - 1;
+            wrappedLines.set(lastIndex, truncateToWidth(wrappedLines.get(lastIndex), fontSize, innerW));
+        }
+
+        float firstBaseline = wrappedLines.size() == 1
+            ? y + (h - fontSize) / 2f
+            : y + h - FIELD_TEXT_VERTICAL_PADDING - fontSize;
+
+        cs.saveGraphicsState();
+        cs.addRect(innerX, innerY, innerW, innerH);
+        cs.clip();
+        cs.beginText();
+        cs.setFont(PDType1Font.HELVETICA, fontSize);
+        cs.newLineAtOffset(innerX, firstBaseline);
+
+        for (int index = 0; index < wrappedLines.size(); index++) {
+            String line = wrappedLines.get(index);
+            float lineWidth = measureTextWidth(line, fontSize);
+            float alignOffset = 0f;
+            if ("center".equals(field.align)) {
+                alignOffset = Math.max(0f, (innerW - lineWidth) / 2f);
+            } else if ("right".equals(field.align)) {
+                alignOffset = Math.max(0f, innerW - lineWidth);
+            }
+            if (alignOffset > 0f) {
+                cs.newLineAtOffset(alignOffset, 0);
+            }
+            cs.showText(line);
+            if (alignOffset > 0f) {
+                cs.newLineAtOffset(-alignOffset, 0);
+            }
+            if (index < wrappedLines.size() - 1) {
+                cs.newLineAtOffset(0, -lineHeight);
+            }
+        }
+
+        cs.endText();
+        cs.restoreGraphicsState();
+    }
+
+    private static List<String> wrapTextToWidth(String text, float fontSize, float maxWidth) throws Exception {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            return lines;
+        }
+
+        String[] paragraphs = text.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+        for (String paragraph : paragraphs) {
+            String normalizedParagraph = paragraph == null ? "" : paragraph.trim();
+            if (normalizedParagraph.isEmpty()) {
+                lines.add("");
+                continue;
+            }
+
+            String[] words = normalizedParagraph.split("\\s+");
+            String currentLine = "";
+            for (String word : words) {
+                if (word == null || word.isEmpty()) {
+                    continue;
+                }
+                String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
+                if (measureTextWidth(candidate, fontSize) <= maxWidth) {
+                    currentLine = candidate;
+                    continue;
+                }
+
+                if (!currentLine.isEmpty()) {
+                    lines.add(currentLine);
+                    currentLine = "";
+                }
+
+                if (measureTextWidth(word, fontSize) <= maxWidth) {
+                    currentLine = word;
+                    continue;
+                }
+
+                List<String> segments = splitTokenToWidth(word, fontSize, maxWidth);
+                if (segments.isEmpty()) {
+                    continue;
+                }
+                for (int index = 0; index < segments.size() - 1; index++) {
+                    lines.add(segments.get(index));
+                }
+                currentLine = segments.get(segments.size() - 1);
+            }
+
+            if (!currentLine.isEmpty()) {
+                lines.add(currentLine);
+            }
+        }
+
+        if (lines.isEmpty()) {
+            lines.add("");
+        }
+        return lines;
+    }
+
+    private static List<String> splitTokenToWidth(String token, float fontSize, float maxWidth) throws Exception {
+        List<String> segments = new ArrayList<>();
+        if (token == null || token.isEmpty()) {
+            return segments;
+        }
+
+        StringBuilder current = new StringBuilder();
+        for (int index = 0; index < token.length(); index++) {
+            char character = token.charAt(index);
+            String candidate = current.toString() + character;
+            if (measureTextWidth(candidate, fontSize) <= maxWidth || current.length() == 0) {
+                current.append(character);
+                continue;
+            }
+
+            segments.add(current.toString());
+            current.setLength(0);
+            current.append(character);
+        }
+
+        if (current.length() > 0) {
+            segments.add(current.toString());
+        }
+        return segments;
+    }
+
+    private static String truncateToWidth(String text, float fontSize, float maxWidth) throws Exception {
+        if (text == null) {
+            return "";
+        }
+        if (measureTextWidth(text, fontSize) <= maxWidth) {
+            return text;
+        }
+
+        final String ellipsis = "...";
+        float ellipsisWidth = measureTextWidth(ellipsis, fontSize);
+        if (ellipsisWidth > maxWidth) {
+            return "";
+        }
+
+        int end = text.length();
+        while (end > 0) {
+            String candidate = text.substring(0, end) + ellipsis;
+            if (measureTextWidth(candidate, fontSize) <= maxWidth) {
+                return candidate;
+            }
+            end--;
+        }
+        return ellipsis;
+    }
+
+    private static float measureTextWidth(String text, float fontSize) throws Exception {
+        if (text == null || text.isEmpty()) {
+            return 0f;
+        }
+        return PDType1Font.HELVETICA.getStringWidth(text) / 1000f * fontSize;
     }
 
     private static String resolveLabelText(TemplateField field) {
@@ -681,6 +602,9 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         if (field == null) {
             return "";
         }
+        if ("multivariabletext".equals(normalizeFieldType(field.type))) {
+            return resolveMultiVariableFieldValue(field, data);
+        }
         Object rawValue = getValue(data, field.key);
         if (rawValue == null || (isComputedFieldKey(field.key) && isBlankValue(rawValue))) {
             String computedValue = resolveComputedFieldValue(field);
@@ -694,6 +618,53 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
 
         if ("date".equals(normalizeFieldType(field.type))) {
             return formatDateLikeValue(rawValue, field.format);
+        }
+        return normalizePdfText(String.valueOf(rawValue));
+    }
+
+    private static String resolveMultiVariableFieldValue(TemplateField field, Map<String, Object> data) {
+        if (field == null) {
+            return "";
+        }
+        String template = field.variablesSampleData == null ? "" : field.variablesSampleData;
+        if (template.trim().isEmpty()) {
+            Object fallbackRaw = getValue(data, field.key);
+            if (fallbackRaw == null || (isComputedFieldKey(field.key) && isBlankValue(fallbackRaw))) {
+                String computed = resolveComputedFieldValue(field);
+                return computed == null ? "" : computed;
+            }
+            return normalizePdfText(String.valueOf(fallbackRaw));
+        }
+
+        Matcher matcher = MULTI_VARIABLE_TOKEN_PATTERN.matcher(template);
+        StringBuffer buffer = new StringBuffer();
+        boolean matched = false;
+        while (matcher.find()) {
+            matched = true;
+            String tokenKey = matcher.group(1) == null ? "" : matcher.group(1).trim();
+            String replacement = resolveTemplateTokenValue(data, tokenKey, field.format);
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        if (!matched) {
+            return normalizePdfText(template);
+        }
+        matcher.appendTail(buffer);
+        return normalizePdfText(buffer.toString());
+    }
+
+    private static String resolveTemplateTokenValue(Map<String, Object> data, String tokenKey, String configuredPattern) {
+        if (tokenKey == null || tokenKey.trim().isEmpty()) {
+            return "";
+        }
+        Object rawValue = getValue(data, tokenKey);
+        if (rawValue == null || (isComputedFieldKey(tokenKey) && isBlankValue(rawValue))) {
+            String computed = resolveComputedFieldValue(tokenKey, configuredPattern);
+            if (computed != null) {
+                return computed;
+            }
+        }
+        if (rawValue == null) {
+            return "";
         }
         return normalizePdfText(String.valueOf(rawValue));
     }
@@ -871,7 +842,14 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         if (field == null || field.key == null) {
             return null;
         }
-        String normalizedKey = field.key.trim().toLowerCase(Locale.ROOT);
+        return resolveComputedFieldValue(field.key, field.format);
+    }
+
+    private static String resolveComputedFieldValue(String key, String configuredPattern) {
+        if (key == null) {
+            return null;
+        }
+        String normalizedKey = key.trim().toLowerCase(Locale.ROOT);
         if (normalizedKey.isEmpty()) {
             return null;
         }
@@ -879,16 +857,16 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         java.time.ZoneId zone = java.time.ZoneId.systemDefault();
         if ("__currentdate".equals(normalizedKey) || "__today".equals(normalizedKey)) {
             LocalDate currentDate = LocalDate.now(zone);
-            return formatDateLikeValue(currentDate, field.format);
+            return formatDateLikeValue(currentDate, configuredPattern);
         }
         if ("__currenttime".equals(normalizedKey) || "__nowtime".equals(normalizedKey)) {
             java.time.LocalTime currentTime = java.time.LocalTime.now(zone);
-            DateTimeFormatter formatter = resolveTimeFormatter(field.format);
+            DateTimeFormatter formatter = resolveTimeFormatter(configuredPattern);
             return normalizePdfText(formatter.format(currentTime));
         }
         if ("__currentdatetime".equals(normalizedKey) || "__now".equals(normalizedKey)) {
             LocalDateTime currentDateTime = LocalDateTime.now(zone);
-            DateTimeFormatter formatter = resolveDateTimeFormatter(field.format);
+            DateTimeFormatter formatter = resolveDateTimeFormatter(configuredPattern);
             return normalizePdfText(formatter.format(currentDateTime));
         }
         return null;
@@ -1033,57 +1011,14 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
     }
 
-    private static void validateAcroFormConfiguration(PDDocument doc, List<TemplateField> fields) {
-        List<String> errors = new ArrayList<>();
-        int pageCount = doc == null ? 0 : doc.getNumberOfPages();
-
-        for (int i = 0; i < fields.size(); i++) {
-            TemplateField field = fields.get(i);
-            if (field == null) {
-                errors.add("fields[" + i + "] is null");
-                continue;
-            }
-
-            String normalizedType = normalizeFieldType(field.type);
-            if (normalizedType == null) {
-                errors.add("fields[" + i + "].type '" + String.valueOf(field.type) + "' is not supported for acroform");
-            }
-
-            if (field.key == null || field.key.trim().isEmpty()) {
-                errors.add("fields[" + i + "].key is required for acroform mode");
-            }
-
-            if (field.page < 0 || field.page >= pageCount) {
-                errors.add("fields[" + i + "].page must be between 0 and " + Math.max(pageCount - 1, 0));
-            }
-
-            if (field.w <= 0 || field.h <= 0) {
-                errors.add("fields[" + i + "] must have positive width and height");
-            }
-
-            if (("text".equals(normalizedType) || "date".equals(normalizedType)) && !isValidAlign(field.align)) {
-                errors.add("fields[" + i + "].align must be left, center, or right");
-            }
-        }
-
-        if (!errors.isEmpty()) {
-            throw new IllegalArgumentException("AcroForm validation failed: " + String.join("; ", errors));
-        }
-    }
-
-    private static boolean isValidAlign(String align) {
-        if (align == null || align.trim().isEmpty()) {
-            return true;
-        }
-        String normalized = align.trim().toLowerCase(Locale.ROOT);
-        return "left".equals(normalized) || "center".equals(normalized) || "right".equals(normalized);
-    }
-
     private static String normalizeFieldType(String type) {
         if (type == null || type.trim().isEmpty()) {
             return "text";
         }
         String normalized = type.trim().toLowerCase(Locale.ROOT);
+        if ("multivariabletext".equals(normalized) || "multi_variable_text".equals(normalized) || "multi-variable-text".equals(normalized)) {
+            return "multivariabletext";
+        }
         if ("text".equals(normalized) || "checkbox".equals(normalized) || "date".equals(normalized) || "signature".equals(normalized)) {
             return normalized;
         }
@@ -1107,9 +1042,6 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TemplateDefinition {
         public List<TemplateField> fields;
-        public TemplateMeta meta;
-        public String outputMode;
-        public String outputPdfMode;
 
         public static TemplateDefinition fromJson(String json) {
             if (json == null || json.trim().isEmpty()) {
@@ -1134,55 +1066,13 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             }
         }
 
-        public String getOutputMode(Map<String, Object> data) {
-            String fromMeta = normalizeMode(meta == null ? null : meta.outputMode);
-            if (fromMeta != null) {
-                return fromMeta;
-            }
-
-            String fromTopLevel = normalizeMode(outputMode);
-            if (fromTopLevel != null) {
-                return fromTopLevel;
-            }
-
-            String fromTopLevelLegacy = normalizeMode(outputPdfMode);
-            if (fromTopLevelLegacy != null) {
-                return fromTopLevelLegacy;
-            }
-
-            if (data != null) {
-                String fromData = normalizeMode(String.valueOf(data.getOrDefault("_outputMode", "")));
-                if (fromData != null) {
-                    return fromData;
-                }
-            }
-            return "flattened";
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class TemplateMeta {
-        public String outputMode;
-    }
-
-    private static String normalizeMode(String mode) {
-        if (mode == null) {
-            return null;
-        }
-        String normalized = mode.trim().toLowerCase(Locale.ROOT);
-        if ("acroform".equals(normalized)) {
-            return "acroform";
-        }
-        if ("flattened".equals(normalized)) {
-            return "flattened";
-        }
-        return null;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TemplateField {
         public String key;
         public String label;
+        public String variablesSampleData;
         public boolean showLabel = true;
         public String type;
         public String format;

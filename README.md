@@ -1,6 +1,6 @@
 # PDF Template Designer (Mendix widget + module guidance)
 
-This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix module blueprint for storing template definitions and generating output PDFs (flattened content or AcroForm fields).
+This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix module blueprint for storing template definitions and generating flattened output PDFs.
 
 **What's included**
 - `pdftemplatedesigner/` widget source (React/TypeScript)
@@ -34,7 +34,6 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
   - `Key`, `Label`, `Show label toggle`, `Type`, `Page`, `Position`, `Size`, `Font size`, `Alignment`, `Required`, `Duplicate button`, `Delete button`.
 - `Save button text` (string, optional): custom toolbar text for the save action button (defaults to `Save JSON`).
 - `View mode` (enumeration): `Designer` (full template editor) or `Viewer` (read/fill mode with interactive overlay fields, including mouse/touch signature capture).
-- `Output PDF mode` (enumeration): `Flattened content` (default) or `AcroForm fields`.
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
 - `On save`: optional microflow to commit the updated TemplateJson.
 
@@ -109,8 +108,9 @@ Use this when `Field key source = Dropdown from JSON`.
     {
       "key": "clientName",
       "label": "Client Name",
+      "variablesSampleData": "{ClientFirstName} {ClientLastName}",
       "showLabel": true,
-      "type": "text|checkbox|date|signature",
+      "type": "text|checkbox|date|signature|multiVariableText",
       "page": 0,
       "x": 100,
       "y": 200,
@@ -123,7 +123,7 @@ Use this when `Field key source = Dropdown from JSON`.
   "meta": {
     "units": "pt",
     "createdWith": "pdftemplatedesigner",
-    "outputMode": "flattened|acroform"
+    "outputMode": "flattened"
   }
 }
 ```
@@ -138,25 +138,25 @@ Use this when `Field key source = Dropdown from JSON`.
   - time: `HH:mm`
   - datetime: `MM/dd/yyyy hh:mm a`
 - Flattened `signature` fields render image data from `DataJson` when the value is a base64 image string (for example `data:image/png;base64,...`).
+- `multiVariableText` fields can use `variablesSampleData` with `{key}` tokens that are resolved from `DataJson` (supports computed keys like `{__currentDate}` too).
 
 **Coordinate system**
 - The widget stores `x`, `y`, `w`, `h` in PDF points (1/72 inch) using a **top-left origin**.
 - The Java action converts to the PDF bottom-left origin (`pdfY = pageHeight - y - h`).
 
-**Output modes**
-- Runtime recommendation is a single path: always generate flattened output from `TemplateJson + DataJson`.
-- In this architecture, `outputMode` should be treated as legacy; do not use runtime AcroForm generation for end-user fill/sign flows.
+**Output mode**
+- Runtime path is always flattened output from `TemplateJson + DataJson`.
 - In flattened output, if a field has `"showLabel": true`, its `label` (or fallback to `key`) is also rendered.
 
 **Viewer mode**
 - When `View mode = Viewer`, the widget renders the linked document with the same canvas engine and overlays interactive controls for your template fields.
-- `text` and `date` fields are editable inputs, `checkbox` fields are clickable, and `signature` fields use a custom mouse/touch canvas.
+- `text` and `date` fields are editable inputs, `checkbox` fields are clickable, `signature` fields use a custom mouse/touch canvas, and `multiVariableText` fields render resolved read-only text from `variablesSampleData`.
 - Signature controls include `Clear signature` and optional `Use SigWeb` (when `SigWeb script URL` is configured and a supported SigWeb capture function is available).
 - With `Data JSON` bound, Viewer mode continuously syncs entered values/signatures into that attribute (overlay + `Data JSON` source of truth).
-- Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF/AcroForm field values are not used as fallback.
+- Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF form field values are not used as fallback.
 - For final output from Viewer-entered values, pass the stored `Data JSON` into your generation/finalization microflow.
 - `FinalizePdfToFlattened` only flattens values that already exist inside PDF form fields; Viewer overlay values must be applied from `Data JSON` in your flow.
-- When generating `flattened` output from a PDF that already has AcroForm fields, the Java action now prioritizes flattening those existing fields (with refreshed appearances) to avoid ghost/placeholder text overlays.
+- When generating `flattened` output from a PDF that already has native form fields, the Java action first flattens existing field appearances to avoid ghost/placeholder overlays.
 - Flatten/render paths now clear field content areas before drawing/finalizing values, which prevents stale light placeholder text when regenerating from previously edited PDFs.
 - See `mendix-module/PdfTemplateDesigner/README.md` section `Runtime workflow (end user, overlay mode)` for the recommended microflow sequence.
 

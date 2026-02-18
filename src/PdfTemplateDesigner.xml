@@ -215,20 +215,10 @@
         <property key="viewMode" type="enumeration" defaultValue="designer" required="true">
             <caption>View mode</caption>
             <category>Data</category>
-            <description>Choose between full template designer mode and viewer mode (native PDF preview with AcroForm input when supported by the browser).</description>
+            <description>Choose between full template designer mode and viewer mode (overlay controls hydrated from Data JSON).</description>
             <enumerationValues>
                 <enumerationValue key="designer">Designer</enumerationValue>
                 <enumerationValue key="viewer">Viewer</enumerationValue>
-            </enumerationValues>
-        </property>
-
-        <property key="outputPdfMode" type="enumeration" defaultValue="flattened" required="true">
-            <caption>Output PDF mode</caption>
-            <category>Behavior</category>
-            <description>Choose whether generation writes flattened static content or creates interactive AcroForm fields.</description>
-            <enumerationValues>
-                <enumerationValue key="flattened">Flattened content</enumerationValue>
-                <enumerationValue key="acroform">AcroForm fields</enumerationValue>
             </enumerationValues>
         </property>
 

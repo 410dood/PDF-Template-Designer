@@ -44,7 +44,7 @@
      - `Data JSON` bound to `ClientDocument.DataJson`
      - `Base PDF datasource` bound to the base template file
    - User edits/signs in overlay controls; widget auto-syncs to `ClientDocument.DataJson`.
-   - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF/AcroForm field values.
+   - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF form field values.
    - Set `Status = InReview` while editing.
 3. `ACT_ClientDocument_FinalizeFromDataJson`
    - Input: `ClientDocument`.
@@ -58,7 +58,7 @@
 - Treat `FormConfiguration` as design-time only; treat `ClientDocument` as runtime instance only.
 - Regenerate final PDFs from pristine base PDF + template snapshot + current `DataJson`.
 - Do not regenerate from an already finalized PDF as a base.
-- For this architecture, native AcroForm editing/finalization is legacy/optional; preferred path is overlay + `DataJson`.
+- Preferred path is overlay + `DataJson`.
 
 **Template JSON (definition)**
 The designer widget produces a **template definition JSON** that describes field positions on the PDF.
@@ -69,6 +69,7 @@ The designer widget produces a **template definition JSON** that describes field
     {
       "key": "clientName",
       "label": "Client name",
+      "variablesSampleData": "{ClientFirstName} {ClientLastName}",
       "showLabel": true,
       "type": "text",
       "page": 0,
@@ -85,21 +86,21 @@ The designer widget produces a **template definition JSON** that describes field
   "meta": {
     "units": "pt",
     "createdWith": "pdftemplatedesigner",
-    "outputMode": "flattened|acroform"
+    "outputMode": "flattened"
   }
 }
 ```
 **Field mapping notes**
 - `page` is **0-based** (page 0 = first page).
 - `x`, `y`, `w`, `h` are **PDF points** (1/72 inch), **top-left origin**.
-- `type` values: `text`, `checkbox`, `date`, `signature`.
+- `type` values: `text`, `checkbox`, `date`, `signature`, `multiVariableText`.
 - `align` values: `left`, `center`, `right`.
 - Optional `format` (for `date` type): Java date format pattern used in generation, default `MM/dd/yyyy`.
-- Optional `showLabel` (Boolean, default `true`): when `outputMode = flattened`, renders label text in the output.
+- Optional `showLabel` (Boolean, default `true`): renders label text in flattened output.
+- Optional `variablesSampleData` (String): for `multiVariableText`, supports `{key}` token replacement from `DataJson` (including computed keys like `{__currentDate}`).
 
 **Template JSON output mode**
 For the recommended `pdfme`-style runtime workflow, always generate flattened output from `TemplateJson + DataJson`.
-`meta.outputMode` is legacy and should not drive runtime behavior in end-user fill/sign flows.
 
 **Fixed key options JSON (widget config)**
 If you set widget property `Field key source = Dropdown from JSON`, you can paste this in `Field key options JSON`:
@@ -196,10 +197,10 @@ The Java action expects a **data JSON** object where keys match template field `
   - a normal PDF, or
   - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
 - Preferred architecture: overlay Viewer + `ClientDocument.DataJson` source of truth + flattened final output.
-- Runtime generator should always flatten existing AcroForm content first (if any), then render template overlays from `DataJson`.
+- Runtime generator should always flatten existing native PDF form content first (if any), then render template overlays from `DataJson`.
 - For final non-editable output after user edits/signs in Viewer overlay, use the stored `ClientDocument.DataJson` in your microflow and call `GenerateFlattenedPdf`, then archive the result.
 - `FinalizePdfToFlattened` only flattens values already present inside the PDF file itself.
-- `FinalizePdfToFlattened` is mainly for native AcroForm workflows; it is not required for the overlay + `DataJson` architecture.
+- `FinalizePdfToFlattened` is not required for the overlay + `DataJson` architecture.
 - Flattening now refreshes non-signature appearances and clears stale widget/default appearances first, which avoids light placeholder/ghost text in finalized output.
 - Flatten/render paths also clear field content areas before writing values, so rerunning generation on already-edited documents does not stack old light placeholder text under new values.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.

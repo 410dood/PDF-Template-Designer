@@ -19,8 +19,6 @@ export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
 export type ViewModeEnum = "designer" | "viewer";
 
-export type OutputPdfModeEnum = "flattened" | "acroform";
-
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
     dataJsonAttr: string;
@@ -62,7 +60,6 @@ export interface PdfTemplateDesignerContainerProps {
     showPropertyDeleteAction: boolean;
     saveButtonText: string;
     viewMode: ViewModeEnum;
-    outputPdfMode: OutputPdfModeEnum;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -104,5 +101,4 @@ export interface PdfTemplateDesignerPreviewProps {
     showPropertyDeleteAction: boolean;
     saveButtonText: string;
     viewMode: ViewModeEnum;
-    outputPdfMode: OutputPdfModeEnum;
 }
