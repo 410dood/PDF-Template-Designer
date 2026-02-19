@@ -295,6 +295,12 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         String normalizedType = normalizeFieldType(field.type);
         String labelText = resolveLabelText(field);
         float fontSize = field.fontSize > 0 ? field.fontSize : 10;
+        String staticTemplateImage = resolveTemplateStaticImageValue(field);
+        if (!"image".equals(normalizedType) && !staticTemplateImage.isEmpty()) {
+            // Backward compatibility: render as image when static template image exists,
+            // even if type was saved with an older/mismatched value.
+            normalizedType = "image";
+        }
 
         if ("checkbox".equals(normalizedType)) {
             clearFieldContentArea(cs, x, y, w, h);
@@ -617,11 +623,25 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         if (!normalizedDirect.isEmpty()) {
             return direct;
         }
-        String staticImage = normalizeSignatureImageDataUrl(field == null ? null : field.imageDataUrl);
+        String staticImage = resolveTemplateStaticImageValue(field);
         if (!staticImage.isEmpty()) {
             return staticImage;
         }
         return direct;
+    }
+
+    private static String resolveTemplateStaticImageValue(TemplateField field) {
+        if (field == null) {
+            return "";
+        }
+        String[] candidates = new String[] { field.imageDataUrl, field.imageData, field.dataUrl, field.src };
+        for (String candidate : candidates) {
+            String normalized = normalizeSignatureImageDataUrl(candidate);
+            if (!normalized.isEmpty()) {
+                return normalized;
+            }
+        }
+        return "";
     }
 
     private static Object findAnySignatureLikeValue(Map<String, Object> data) {
@@ -648,6 +668,10 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return resolveMultiVariableFieldValue(field, data);
         }
         Object rawValue = getValue(data, field.key);
+        if (isLikelyImagePayload(rawValue)) {
+            // Prevent raw base64/data-url image payloads from being rendered as plain text.
+            return "";
+        }
         if (rawValue == null || (isComputedFieldKey(field.key) && isBlankValue(rawValue))) {
             String computedValue = resolveComputedFieldValue(field);
             if (computedValue != null) {
@@ -699,6 +723,9 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return "";
         }
         Object rawValue = getValue(data, tokenKey);
+        if (isLikelyImagePayload(rawValue)) {
+            return "";
+        }
         if (rawValue == null || (isComputedFieldKey(tokenKey) && isBlankValue(rawValue))) {
             String computed = resolveComputedFieldValue(tokenKey, configuredPattern);
             if (computed != null) {
@@ -752,11 +779,19 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
             if (image == null) {
-                return null;
+                try {
+                    return PDImageXObject.createFromByteArray(doc, bytes, "field-image");
+                } catch (Exception ignored) {
+                    return null;
+                }
             }
             return LosslessFactory.createFromImage(doc, image);
         } catch (Exception ignored) {
-            return null;
+            try {
+                return PDImageXObject.createFromByteArray(doc, bytes, "field-image");
+            } catch (Exception ignoredAgain) {
+                return null;
+            }
         }
     }
 
@@ -810,7 +845,9 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
         if (value instanceof Map<?, ?>) {
             Map<?, ?> map = (Map<?, ?>) value;
-            String[] candidateKeys = new String[] { "value", "dataUrl", "imageData", "signature", "result", "data" };
+            String[] candidateKeys = new String[] {
+                "value", "dataUrl", "imageData", "signature", "signatureData", "result", "data", "base64", "src", "url", "content", "fileData", "fileContent"
+            };
             for (String key : candidateKeys) {
                 if (!map.containsKey(key)) {
                     continue;
@@ -862,6 +899,26 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return ((String) value).trim().isEmpty();
         }
         return false;
+    }
+
+    private static boolean isLikelyImagePayload(Object value) {
+        String extracted = extractStringFromUnknown(value);
+        if (isBlankValue(extracted)) {
+            return false;
+        }
+        String text = extracted.trim();
+        if (text.isEmpty()) {
+            return false;
+        }
+        if (text.regionMatches(true, 0, "data:image/", 0, "data:image/".length())) {
+            return true;
+        }
+        if (text.matches("(?i)^image/\\w+;base64,.*$")) {
+            return true;
+        }
+        // Heuristic for raw base64 payloads (no data URL prefix).
+        String compact = text.replaceAll("\\s+", "");
+        return compact.length() >= 256 && compact.matches("^[A-Za-z0-9+/=_-]+$");
     }
 
     private static boolean isComputedFieldKey(String key) {
@@ -1118,6 +1175,10 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         public String variablesSampleData;
         public List<String> options;
         public String imageDataUrl;
+        // Legacy/alternate static image property names that may exist in stored template JSON.
+        public String imageData;
+        public String dataUrl;
+        public String src;
         public String labelOrientation;
         public String optionsOrientation;
         public boolean showLabel = true;

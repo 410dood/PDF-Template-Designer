@@ -168,6 +168,12 @@ Use this when `Field key source = Dropdown from JSON`.
 - For `image` fields:
   - If the field is key-bound and `Data JSON` contains a base64 image (`data:image/...`), that value is rendered.
   - If not key-bound, you can store a static template image via `imageDataUrl`.
+  - Uploaded static template images are normalized to PNG data URLs to improve flatten/render compatibility in Java/PDFBox.
+- In Designer, `date` fields include a `Format` dropdown with common patterns:
+  - `MM/dd/yyyy`
+  - `HH:mm`
+  - `MM/dd/yyyy HH:mm`
+  - `MM/dd/yyyy hh:mm a`
 - Signature controls include `Clear signature` and optional `Use SigWeb` (when `SigWeb script URL` is configured and a supported SigWeb capture function is available).
 - With `Data JSON` bound, Viewer mode continuously syncs entered values/signatures into that attribute (overlay + `Data JSON` source of truth).
 - Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF form field values are not used as fallback.

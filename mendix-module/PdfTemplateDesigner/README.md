@@ -101,6 +101,8 @@ The designer widget produces a **template definition JSON** that describes field
 - Optional `optionsOrientation` (`horizontal`|`vertical`, default `vertical` for `radio`): controls radio option layout in Viewer.
 - Optional `options` (String array): option list for `select`/`radio`.
 - Optional `imageDataUrl` (String): static base64 image used by `image` fields when no key-bound image value is available.
+  - Designer-uploaded static images are normalized to PNG data URLs to improve flatten compatibility.
+  - Flatten renderer also accepts legacy aliases (`imageData`, `dataUrl`, `src`) from older template JSON.
 - Optional `variablesSampleData` (String): for `multiVariableText`, supports `{key}` token replacement from `DataJson` (including computed keys like `{__currentDate}`).
 
 **Template JSON output mode**
@@ -140,6 +142,7 @@ Built-in key options are included in dropdown key-source modes (`datasource`/`js
 - Category `Palette fields` provides per-tool show/hide booleans so app developers can disable specific palette tools (for example hide `Barcode` or `QR code`).
 - Field property `labelOrientation` controls label placement (`horizontal` inline or `vertical` stacked).
 - For `radio`, `optionsOrientation` controls whether options render vertically or horizontally in Viewer mode.
+- For `date` fields, the editor includes a `Format` dropdown with common values (`MM/dd/yyyy`, `HH:mm`, `MM/dd/yyyy HH:mm`, `MM/dd/yyyy hh:mm a`).
 - If a `date` field uses computed keys (`__currentDate`, `__currentTime`, `__currentDateTime`), Viewer mode renders the resolved value as static text to avoid browser date-input parsing/clipping artifacts.
 
 **Data JSON (values)**
@@ -160,6 +163,7 @@ The Java action expects a **data JSON** object where keys match template field `
 - If a key is missing, the field is left blank.
 - Flattened `signature` fields render image data from `DataJson` when the value is a base64 image string (for example `data:image/png;base64,...`).
 - Flattened `image` fields render a key-bound base64 image from `DataJson` when present; otherwise they fall back to template `imageDataUrl`.
+  - Image decode is tolerant of common payload wrappers (for example `value`, `dataUrl`, `imageData`, `base64`, `src`, `content`).
 - Reserved computed keys (when not present in `dataJson`):
   - `__currentDate` (alias `__today`) -> current server date.
   - `__currentTime` (alias `__nowTime`) -> current server time.

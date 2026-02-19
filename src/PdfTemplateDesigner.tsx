@@ -84,6 +84,7 @@ interface TemplateField {
   key: string;
   label: string;
   variablesSampleData: string;
+  format: string;
   options: string[];
   imageDataUrl: string;
   labelOrientation: FieldOrientation;
@@ -196,6 +197,13 @@ const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSiz
   radio: { w: 160, h: 36, fontSize: 10, align: "left" },
   image: { w: 140, h: 90, fontSize: 10, align: "center" }
 };
+const DATE_FIELD_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "MM/dd/yyyy", label: "MM/dd/yyyy (Date)" },
+  { value: "HH:mm", label: "HH:mm (24h Time)" },
+  { value: "MM/dd/yyyy HH:mm", label: "MM/dd/yyyy HH:mm (24h DateTime)" },
+  { value: "MM/dd/yyyy hh:mm a", label: "MM/dd/yyyy hh:mm a (12h DateTime)" }
+];
+const DEFAULT_DATE_FIELD_FORMAT = DATE_FIELD_FORMAT_OPTIONS[0].value;
 const BUILTIN_COMPUTED_KEY_OPTIONS: KeyOption[] = [
   { value: "__currentDate", label: "__currentDate (alias __today)", dataType: "Date" },
   { value: "__currentTime", label: "__currentTime (alias __nowTime)", dataType: "Time" },
@@ -210,6 +218,7 @@ const TOOL_RAIL_ITEMS: Array<{
   type: FieldType;
   keyBase?: string;
   seedLabel?: string;
+  format?: string;
   w?: number;
   h?: number;
   align?: FieldAlign;
@@ -237,7 +246,18 @@ const TOOL_RAIL_ITEMS: Array<{
   { id: "signaturePad", type: "signature", glyph: "SG", tooltip: "Signature pad", label: "Signature pad", keyBase: "signaturePad" },
   { id: "qr", type: "text", glyph: "QR", tooltip: "QR code", label: "QR code", keyBase: "qr", seedLabel: "QR Code", w: 86, h: 86, align: "center" },
   { id: "date", type: "date", glyph: "CAL", tooltip: "Date field", label: "Date field", keyBase: "date" },
-  { id: "time", type: "date", glyph: "CLK", tooltip: "Time field", label: "Time field", keyBase: "time", seedLabel: "Time", w: 120, h: 20 },
+  {
+    id: "time",
+    type: "date",
+    glyph: "CLK",
+    tooltip: "Time field",
+    label: "Time field",
+    keyBase: "time",
+    seedLabel: "Time",
+    format: "HH:mm",
+    w: 120,
+    h: 20
+  },
   { id: "select", type: "select", glyph: "SEL", tooltip: "Select", label: "Select", keyBase: "select", seedLabel: "Select", w: 140, h: 24 },
   { id: "checkbox", type: "checkbox", glyph: "CHK", tooltip: "Checkbox", label: "Checkbox", keyBase: "checkbox" },
   { id: "radio", type: "radio", glyph: "RAD", tooltip: "Radio", label: "Radio", keyBase: "radio", seedLabel: "Radio", w: 160, h: 36 },
@@ -323,6 +343,14 @@ function isFieldOrientation(value: unknown): value is FieldOrientation {
 
 function isFieldKeySourceMode(value: unknown): value is FieldKeySourceMode {
   return value === "manual" || value === "datasource" || value === "json";
+}
+
+function normalizeFieldFormat(type: FieldType, value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (type === "date") {
+    return text || DEFAULT_DATE_FIELD_FORMAT;
+  }
+  return text;
 }
 
 function isViewMode(value: unknown): value is ViewMode {
@@ -568,6 +596,7 @@ function normalizeField(input: any, index: number): TemplateField {
       : typeof input?.variableSampleData === "string"
         ? input.variableSampleData
         : "";
+  const format = normalizeFieldFormat(type, input?.format);
   const options = normalizeOptionStrings(input?.options ?? input?.enumOptions ?? input?.values);
   const imageDataUrl =
     typeof input?.imageDataUrl === "string"
@@ -596,6 +625,7 @@ function normalizeField(input: any, index: number): TemplateField {
     key,
     label,
     variablesSampleData,
+    format,
     options: options.length > 0 ? options : defaultOptionsForFieldType(type),
     imageDataUrl,
     labelOrientation,
@@ -692,6 +722,7 @@ function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefine
       key: field.key,
       label: field.label,
       variablesSampleData: field.variablesSampleData,
+      format: field.format,
       options: normalizeOptionStrings(field.options),
       imageDataUrl: field.imageDataUrl,
       labelOrientation: field.labelOrientation,
@@ -771,6 +802,7 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
       a.key !== b.key ||
       a.label !== b.label ||
       a.variablesSampleData !== b.variablesSampleData ||
+      a.format !== b.format ||
       a.imageDataUrl !== b.imageDataUrl ||
       a.options.length !== b.options.length ||
       a.labelOrientation !== b.labelOrientation ||
@@ -1096,6 +1128,35 @@ function normalizeImageDataFromUnknown(value: unknown): string {
   return normalizeSignatureImageFromUnknown(value) || "";
 }
 
+function rasterizeImageDataUrlToPng(dataUrl: string): Promise<string> {
+  if (!dataUrl || typeof document === "undefined") {
+    return Promise.resolve(dataUrl);
+  }
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const width = Math.max(1, image.naturalWidth || image.width || 1);
+        const height = Math.max(1, image.naturalHeight || image.height || 1);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(dataUrl);
+          return;
+        }
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (_error) {
+        resolve(dataUrl);
+      }
+    };
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
 function getSigWebPointCount(globalObject: any): number | undefined {
   const numberOfPointsFn = globalObject?.NumberOfTabletPoints;
   if (typeof numberOfPointsFn !== "function") {
@@ -1192,12 +1253,39 @@ function isComputedTokenKey(tokenKey: string): boolean {
   );
 }
 
-function resolveComputedTokenValue(tokenKey: string): string | undefined {
+function formatDateByPattern(date: Date, pattern: string): string | undefined {
+  const safePattern = pattern.trim();
+  if (!safePattern) {
+    return undefined;
+  }
+  const datePart = date.toLocaleDateString("en-US");
+  const time24 = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const time12 = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  if (safePattern === "MM/dd/yyyy") {
+    return datePart;
+  }
+  if (safePattern === "HH:mm") {
+    return time24;
+  }
+  if (safePattern === "MM/dd/yyyy HH:mm") {
+    return `${datePart} ${time24}`;
+  }
+  if (safePattern === "MM/dd/yyyy hh:mm a") {
+    return `${datePart} ${time12}`;
+  }
+  return undefined;
+}
+
+function resolveComputedTokenValue(tokenKey: string, configuredFormat?: string): string | undefined {
   const normalized = tokenKey.trim().toLowerCase();
   if (!normalized) {
     return undefined;
   }
   const now = new Date();
+  const formatted = configuredFormat ? formatDateByPattern(now, configuredFormat) : undefined;
+  if (formatted) {
+    return formatted;
+  }
   if (normalized === "__currentdate" || normalized === "__today") {
     return now.toLocaleDateString("en-US");
   }
@@ -1302,7 +1390,7 @@ function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFiel
     return previousValue;
   }
   if (isComputedTokenKey(field.key)) {
-    return resolveComputedTokenValue(field.key) || "";
+    return resolveComputedTokenValue(field.key, field.type === "date" ? field.format : undefined) || "";
   }
   return "";
 }
@@ -2301,6 +2389,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "key"
           | "label"
           | "variablesSampleData"
+          | "format"
           | "options"
           | "imageDataUrl"
           | "labelOrientation"
@@ -2322,6 +2411,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const fieldHeight = Math.max(8, toNumber(overrides?.h, defaults.h));
       const fontSize = Math.max(6, toNumber(overrides?.fontSize, defaults.fontSize));
       const align = overrides?.align && isAlign(overrides.align) ? overrides.align : defaults.align;
+      const format = normalizeFieldFormat(type, overrides?.format);
       const snappedX = snapValue(clamp(x - fieldWidth / 2, 0, width - fieldWidth), snapEnabled);
       const snappedY = snapValue(clamp(y - fieldHeight / 2, 0, height - fieldHeight), snapEnabled);
       return {
@@ -2329,6 +2419,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         key,
         label: overrides?.label ?? "",
         variablesSampleData: overrides?.variablesSampleData ?? "",
+        format,
         options: overrides?.options ? [...overrides.options] : defaultOptionsForFieldType(type),
         imageDataUrl: overrides?.imageDataUrl ?? "",
         labelOrientation:
@@ -2365,6 +2456,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "key"
           | "label"
           | "variablesSampleData"
+          | "format"
           | "options"
           | "imageDataUrl"
           | "labelOrientation"
@@ -2394,6 +2486,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "key"
           | "label"
           | "variablesSampleData"
+          | "format"
           | "options"
           | "imageDataUrl"
           | "labelOrientation"
@@ -2524,6 +2617,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     () => fields.find(field => field.id === selectedFieldId) || null,
     [fields, selectedFieldId]
   );
+  const selectedFieldDateFormat =
+    selectedField && selectedField.type === "date"
+      ? normalizeFieldFormat("date", selectedField.format)
+      : DEFAULT_DATE_FIELD_FORMAT;
+  const selectedFieldHasCustomDateFormat = !DATE_FIELD_FORMAT_OPTIONS.some(option => option.value === selectedFieldDateFormat);
   useEffect(() => {
     setOptionDraft("");
     setImageUploadError(null);
@@ -2748,11 +2846,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         key,
         label: tool.seedLabel || "",
         variablesSampleData: tool.type === "multiVariableText" ? "{name}" : undefined,
+        format: tool.format,
         w: tool.w,
         h: tool.h,
         align: tool.align,
         showLabel: tool.showLabel
-      } as Partial<Pick<TemplateField, "key" | "label" | "variablesSampleData" | "w" | "h" | "align" | "showLabel">>;
+      } as Partial<Pick<TemplateField, "key" | "label" | "variablesSampleData" | "format" | "w" | "h" | "align" | "showLabel">>;
     },
     []
   );
@@ -3057,6 +3156,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       if (!selectedField || selectedField.type !== "image" || selectedFieldIsImageKeyBound) {
         return;
       }
+      const selectedFieldImageId = selectedField.id;
       const file = event.currentTarget.files?.[0];
       if (!file) {
         return;
@@ -3074,8 +3174,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           setImageUploadError("Unable to read the selected image.");
           return;
         }
-        setImageUploadError(null);
-        updateField(selectedField.id, { imageDataUrl: normalized });
+        rasterizeImageDataUrlToPng(normalized)
+          .then(rasterized => {
+            const finalImage = normalizeImageDataFromUnknown(rasterized) || normalized;
+            setImageUploadError(null);
+            updateField(selectedFieldImageId, { imageDataUrl: finalImage });
+          })
+          .catch(() => {
+            setImageUploadError(null);
+            updateField(selectedFieldImageId, { imageDataUrl: normalized });
+          });
       };
       reader.onerror = () => {
         setImageUploadError("Unable to read the selected image.");
@@ -3239,7 +3347,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       } as const;
       const rawValue = viewerFieldValues[field.key];
       const value = typeof rawValue === "string" ? rawValue : "";
-      const computedFallback = isComputedTokenKey(field.key) && !value.trim() ? resolveComputedTokenValue(field.key) || "" : "";
+      const computedFallback =
+        isComputedTokenKey(field.key) && !value.trim()
+          ? resolveComputedTokenValue(field.key, field.type === "date" ? field.format : undefined) || ""
+          : "";
       const displayValue = value.trim() ? value : computedFallback;
       if (field.type === "select") {
         const options = field.options.length > 0 ? field.options : defaultOptionsForFieldType(field.type);
@@ -3857,6 +3968,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                             selectedField.options.length > 0 ? selectedField.options : defaultOptionsForFieldType(nextType);
                           nextChanges.options = [...nextOptions];
                         }
+                        if (nextType === "date") {
+                          nextChanges.format = normalizeFieldFormat("date", selectedField.format);
+                        }
                         nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
                         updateField(selectedField.id, nextChanges);
                       }}
@@ -3894,6 +4008,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                             const enumOptions = normalizeOptionStrings(selectedOption?.options);
                             nextChanges.options =
                               enumOptions.length > 0 ? enumOptions : defaultOptionsForFieldType(nextType);
+                          }
+                          if (nextType === "date") {
+                            nextChanges.format = normalizeFieldFormat("date", selectedField.format);
                           }
                           if (mappedType) {
                             nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
@@ -4099,6 +4216,30 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     </select>
                   </div>
                   ) : null}
+                </div>
+                ) : null}
+
+                {selectedField.type === "date" ? (
+                <div className="pdf-template-designer__inspector-section">
+                  <div className="pdf-template-designer__label">Format</div>
+                  <select
+                    className="pdf-template-designer__select"
+                    value={selectedFieldDateFormat}
+                    onChange={event =>
+                      updateField(selectedField.id, {
+                        format: normalizeFieldFormat("date", event.target.value)
+                      })
+                    }
+                  >
+                    {selectedFieldHasCustomDateFormat ? (
+                      <option value={selectedFieldDateFormat}>{selectedFieldDateFormat} (Custom)</option>
+                    ) : null}
+                    {DATE_FIELD_FORMAT_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 ) : null}
 
