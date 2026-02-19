@@ -557,6 +557,63 @@
   box-shadow: inset 0 0 0 2px rgba(239, 91, 37, 0.22);
 }
 
+.pdf-template-designer__viewer-select {
+  appearance: none;
+  padding-right: 20px;
+}
+
+.pdf-template-designer__viewer-radio-group {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-content: flex-start;
+  gap: 4px;
+  padding: 4px 6px;
+  overflow: auto;
+}
+
+.pdf-template-designer__viewer-radio-group--vertical {
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pdf-template-designer__viewer-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pdf-template-designer__viewer-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #111827;
+}
+
+.pdf-template-designer__viewer-radio-option input {
+  margin: 0;
+}
+
+.pdf-template-designer__viewer-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #fff;
+}
+
+.pdf-template-designer__viewer-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 4px;
+}
+
 .pdf-template-designer__viewer-checkbox {
   width: 100%;
   height: 100%;
@@ -566,6 +623,17 @@
   padding: 0 6px;
   font-size: 12px;
   color: #111827;
+}
+
+.pdf-template-designer__viewer-checkbox--vertical {
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.pdf-template-designer__viewer-checkbox--horizontal {
+  flex-direction: row;
+  justify-content: flex-start;
 }
 
 .pdf-template-designer__viewer-checkbox input {
@@ -584,6 +652,19 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
+}
+
+.pdf-template-designer__viewer-date-static {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: #111827;
+  background: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .pdf-template-designer__signature-canvas {
@@ -695,6 +776,40 @@
 .pdf-template-designer__inspector-actions {
   display: grid;
   gap: 8px;
+}
+
+.pdf-template-designer__option-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.pdf-template-designer__option-list {
+  display: grid;
+  gap: 6px;
+}
+
+.pdf-template-designer__option-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.pdf-template-designer__image-preview {
+  border: 1px dashed var(--pd-border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+  background: #fafafa;
+}
+
+.pdf-template-designer__image-preview img {
+  max-width: 100%;
+  max-height: 180px;
+  display: block;
+  object-fit: contain;
 }
 
 .pdf-template-designer__label {

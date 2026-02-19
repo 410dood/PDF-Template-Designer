@@ -20,9 +20,9 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `Base PDF datasource` (optional): datasource that returns the base PDF `FileDocument` object. The widget uses the first item.
 - If `Base PDF datasource` is empty and the context object is a `System.FileDocument` specialization, the widget uses the context object file as the base PDF.
 - `Field key source` (enumeration): `Manual text input` (default), `Dropdown from datasource`, or `Dropdown from JSON`.
-- `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource` (drives key palette + Key dropdown; built-in computed keys are also appended).
+- `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource` (drives Key dropdown; built-in computed keys are also appended).
 - `Field key option attribute` (optional): attribute from the datasource object that contains the key string.
-- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON` (drives key palette + Key dropdown; built-in computed keys are also appended).
+- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON` (drives Key dropdown; built-in computed keys are also appended). Supports optional enum options arrays per key (for select/radio option locking).
 - `PDF.js worker URL` (text template, optional): explicit URL for the worker script (Advanced category).
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
 - `SigWeb script URL` (text template, optional): URL to `SigWebTablet.js` for external signature-pad capture in Viewer mode.
@@ -30,6 +30,7 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `Enable keyboard shortcuts` (boolean, default `true`): enable/disable shortcut handling in the editor.
 - `Show field properties` (boolean, default `true`): show/hide the right-side field properties panel.
 - `Show palette section` / `Show fields section` / `Show pages section` (booleans, default `true`): control each left sidebar section independently.
+- Palette field visibility toggles (booleans, default `true`, category `Palette fields`): hide/show individual palette tools (Text, Multi-variable text, Signature, Table, Line, Rectangle, Circle, Image, Link, Signature pad, QR code, Date, Time, Select, Checkbox, Radio, Barcode, Wide barcode).
 - Field property visibility toggles (booleans, default `true`): hide/show each row in the Field properties card:
   - `Key`, `Label`, `Show label toggle`, `Type`, `Page`, `Position`, `Size`, `Font size`, `Alignment`, `Required`, `Duplicate button`, `Delete button`.
 - `Save button text` (string, optional): custom toolbar text for the save action button (defaults to `Save JSON`).
@@ -54,14 +55,18 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 [
   { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
   { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
-  { "key": "ProgramIsActive", "label": "Program Is Active", "type": "Boolean" }
+  { "key": "ProgramIsActive", "label": "Program Is Active", "type": "Boolean" },
+  { "key": "EnrollmentStatus", "label": "Enrollment Status", "type": "Enumeration", "options": ["Active", "Inactive"] }
 ]
 ```
 
 When `type` is provided, the key palette and dropdown show it (for example `Client Date Of Birth (DateTime)`).
 Placing/selecting an option also auto-maps widget field type for:
 - `Boolean` -> `checkbox`
-- `Date`/`DateTime`/`Time` -> `date`
+- `Enumeration` -> `select`
+- `Date` -> `date`
+- `DateTime`/`Time` -> `text`
+- `Image`/`Photo`/`Picture` -> `image`
 - `Signature` -> `signature`
 
 **Fixed key options JSON (copy/paste)**
@@ -82,9 +87,9 @@ Use this when `Field key source = Dropdown from JSON`.
 ```
 
 **Designer UX (MVP+)**
-- Manual mode (`Field key source = Manual text input`): choose a field type tool, then click/drag to place.
-- Dropdown modes (`Field key source = Dropdown from datasource/json`): palette lists keys so users can drag a key directly to the page in one step.
-- Dropdown modes also include built-in key options:
+- Choose a field type tool, then click/drag to place.
+- In dropdown key modes (`datasource`/`json`), the field Key editor uses your key options list (plus built-in computed keys).
+- Built-in key options:
   - `__currentDate` (`__today` alias)
   - `__currentTime` (`__nowTime` alias)
   - `__currentDateTime` (`__now` alias)
@@ -109,8 +114,12 @@ Use this when `Field key source = Dropdown from JSON`.
       "key": "clientName",
       "label": "Client Name",
       "variablesSampleData": "{ClientFirstName} {ClientLastName}",
+      "options": ["option1", "option2"],
+      "imageDataUrl": "data:image/png;base64,...",
+      "labelOrientation": "horizontal",
+      "optionsOrientation": "vertical",
       "showLabel": true,
-      "type": "text|checkbox|date|signature|multiVariableText",
+      "type": "text|checkbox|date|signature|multiVariableText|select|radio|image",
       "page": 0,
       "x": 100,
       "y": 200,
@@ -147,10 +156,18 @@ Use this when `Field key source = Dropdown from JSON`.
 **Output mode**
 - Runtime path is always flattened output from `TemplateJson + DataJson`.
 - In flattened output, if a field has `"showLabel": true`, its `label` (or fallback to `key`) is also rendered.
+- Label orientation can be configured per field with `labelOrientation`:
+  - `horizontal`: inline (`Label: Value`)
+  - `vertical`: label above field value
 
 **Viewer mode**
 - When `View mode = Viewer`, the widget renders the linked document with the same canvas engine and overlays interactive controls for your template fields.
-- `text` and `date` fields are editable inputs, `checkbox` fields are clickable, `signature` fields use a custom mouse/touch canvas, and `multiVariableText` fields render resolved read-only text from `variablesSampleData`.
+- `text` and `date` fields are editable inputs, `checkbox` fields are clickable, `signature` fields use a custom mouse/touch canvas, `select` and `radio` render interactive option controls, `image` renders image data, and `multiVariableText` fields render resolved read-only text from `variablesSampleData`.
+- `radio` orientation is configurable per field with `optionsOrientation` (`vertical` or `horizontal`).
+- For computed token date/time fields (`__currentDate`, `__currentTime`, `__currentDateTime`) rendered with field type `date`, Viewer mode displays a static text value instead of a native browser date input so date/time text does not get clipped or partially parsed.
+- For `image` fields:
+  - If the field is key-bound and `Data JSON` contains a base64 image (`data:image/...`), that value is rendered.
+  - If not key-bound, you can store a static template image via `imageDataUrl`.
 - Signature controls include `Clear signature` and optional `Use SigWeb` (when `SigWeb script URL` is configured and a supported SigWeb capture function is available).
 - With `Data JSON` bound, Viewer mode continuously syncs entered values/signatures into that attribute (overlay + `Data JSON` source of truth).
 - Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF form field values are not used as fallback.

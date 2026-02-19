@@ -293,7 +293,6 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
     private static void renderField(PDDocument doc, PDPageContentStream cs, TemplateField field, Map<String, Object> data, float x, float y, float w, float h)
         throws Exception {
         String normalizedType = normalizeFieldType(field.type);
-        String value = getFormattedFieldValue(field, data);
         String labelText = resolveLabelText(field);
         float fontSize = field.fontSize > 0 ? field.fontSize : 10;
 
@@ -309,7 +308,11 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
                 cs.stroke();
             }
             if (field.showLabel && !labelText.isEmpty()) {
-                drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize));
+                if (isVerticalLabelOrientation(field)) {
+                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                } else {
+                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize));
+                }
             }
             return;
         }
@@ -319,7 +322,11 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
             cs.addRect(x, y, w, h);
             cs.stroke();
             if (field.showLabel && !labelText.isEmpty()) {
-                drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                if (isVerticalLabelOrientation(field)) {
+                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                } else {
+                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize));
+                }
             }
             boolean hasDrawnSignature = drawSignatureImage(cs, doc, getSignatureValue(data, field.key), x, y, w, h);
             if (!hasDrawnSignature) {
@@ -332,8 +339,23 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
             return;
         }
 
+        if ("image".equals(normalizedType)) {
+            clearFieldContentArea(cs, x, y, w, h);
+            boolean hasDrawnImage = drawSignatureImage(cs, doc, getImageValue(data, field), x, y, w, h);
+            if (!hasDrawnImage) {
+                String placeholder = field.showLabel && !labelText.isEmpty() ? labelText : "Image";
+                drawBoundedText(cs, placeholder, field, x, y, w, h, Math.max(8, fontSize));
+            }
+            return;
+        }
+
+        String value = getFormattedFieldValue(field, data);
         if (field.showLabel && !labelText.isEmpty()) {
-            value = normalizePdfText(labelText + ": " + value);
+            if (isVerticalLabelOrientation(field)) {
+                drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+            } else {
+                value = normalizePdfText(labelText + ": " + value);
+            }
         }
 
         clearFieldContentArea(cs, x, y, w, h);
@@ -546,6 +568,13 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         return normalizePdfText(field.key == null ? "" : field.key.trim());
     }
 
+    private static boolean isVerticalLabelOrientation(TemplateField field) {
+        if (field == null || field.labelOrientation == null) {
+            return false;
+        }
+        return "vertical".equals(field.labelOrientation.trim().toLowerCase(Locale.ROOT));
+    }
+
     private static void drawLabelText(PDPageContentStream cs, String text, float x, float y, float fontSize) throws Exception {
         if (text == null || text.trim().isEmpty()) {
             return;
@@ -577,6 +606,19 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         Object anySignatureLike = findAnySignatureLikeValue(data);
         if (anySignatureLike != null) {
             return anySignatureLike;
+        }
+        return direct;
+    }
+
+    private static Object getImageValue(Map<String, Object> data, TemplateField field) {
+        Object direct = getValue(data, field == null ? null : field.key);
+        String normalizedDirect = normalizeSignatureImageDataUrl(extractStringFromUnknown(direct));
+        if (!normalizedDirect.isEmpty()) {
+            return direct;
+        }
+        String staticImage = normalizeSignatureImageDataUrl(field == null ? null : field.imageDataUrl);
+        if (!staticImage.isEmpty()) {
+            return staticImage;
         }
         return direct;
     }
@@ -1060,7 +1102,8 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         if ("multivariabletext".equals(normalized) || "multi_variable_text".equals(normalized) || "multi-variable-text".equals(normalized)) {
             return "multivariabletext";
         }
-        if ("text".equals(normalized) || "checkbox".equals(normalized) || "date".equals(normalized) || "signature".equals(normalized)) {
+        if ("text".equals(normalized) || "checkbox".equals(normalized) || "date".equals(normalized) || "signature".equals(normalized)
+            || "select".equals(normalized) || "radio".equals(normalized) || "image".equals(normalized)) {
             return normalized;
         }
         return null;
@@ -1114,6 +1157,10 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         public String key;
         public String label;
         public String variablesSampleData;
+        public List<String> options;
+        public String imageDataUrl;
+        public String labelOrientation;
+        public String optionsOrientation;
         public boolean showLabel = true;
         public String type;
         public String format;

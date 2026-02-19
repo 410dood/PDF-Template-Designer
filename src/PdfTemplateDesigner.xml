@@ -77,7 +77,7 @@
         <property key="fieldKeyOptionsJson" type="string" multiline="true" required="false">
             <caption>Field key options JSON</caption>
             <category>Field keys</category>
-            <description>JSON array used for key palette and property dropdown values. Supports string items or objects with key/value, optional label, and optional type. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
+            <description>JSON array used for key and property dropdown values. Supports string items or objects with key/value, optional label, optional type, and optional options array for enumeration values. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
         </property>
 
         <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
@@ -132,6 +132,97 @@
             <caption>Show pages section</caption>
             <category>Configuration</category>
             <description>Show or hide the Pages thumbnail section in the left sidebar.</description>
+        </property>
+
+        <property key="showPaletteToolText" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Text field</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Text field tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolMultiVariableText" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Multi-variable text</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Multi-variable text tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolSignature" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Signature field</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Signature field tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolTable" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Table</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Table tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolLine" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Line</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Line tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolBox" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Rectangle</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Rectangle tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolCircle" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Circle</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Circle tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolImage" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Image</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Image tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolLink" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Link</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Link tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolSignaturePad" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Signature pad</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Signature pad tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolQr" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: QR code</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the QR code tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolDate" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Date field</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Date field tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolTime" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Time field</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Time field tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolSelect" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Select</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Select tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolCheckbox" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Checkbox</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Checkbox tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolRadio" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Radio</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Radio tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolBarcode" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Barcode</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Barcode tool in the palette.</description>
+        </property>
+        <property key="showPaletteToolBarcodeWide" type="boolean" defaultValue="true" required="true">
+            <caption>Show tool: Wide barcode</caption>
+            <category>Palette fields</category>
+            <description>Show or hide the Wide barcode tool in the palette.</description>
         </property>
 
         <property key="showPropertyKey" type="boolean" defaultValue="true" required="true">

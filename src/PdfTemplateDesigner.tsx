@@ -1,5 +1,5 @@
 ﻿import { createElement, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { CSSProperties } from "react";
 import type { ActionValue, DynamicValue, EditableValue, ListAttributeValue, ListValue } from "mendix";
 import { Big } from "big.js";
@@ -46,10 +46,29 @@ export interface PdfDesignerCoreProps {
   showPropertyDeleteAction?: boolean;
   saveButtonText?: string;
   viewMode?: "designer" | "viewer";
+  showPaletteToolText?: boolean;
+  showPaletteToolMultiVariableText?: boolean;
+  showPaletteToolSignature?: boolean;
+  showPaletteToolTable?: boolean;
+  showPaletteToolLine?: boolean;
+  showPaletteToolBox?: boolean;
+  showPaletteToolCircle?: boolean;
+  showPaletteToolImage?: boolean;
+  showPaletteToolLink?: boolean;
+  showPaletteToolSignaturePad?: boolean;
+  showPaletteToolQr?: boolean;
+  showPaletteToolDate?: boolean;
+  showPaletteToolTime?: boolean;
+  showPaletteToolSelect?: boolean;
+  showPaletteToolCheckbox?: boolean;
+  showPaletteToolRadio?: boolean;
+  showPaletteToolBarcode?: boolean;
+  showPaletteToolBarcodeWide?: boolean;
 }
 
-type FieldType = "text" | "checkbox" | "date" | "signature" | "multiVariableText";
+type FieldType = "text" | "checkbox" | "date" | "signature" | "multiVariableText" | "select" | "radio" | "image";
 type FieldAlign = "left" | "center" | "right";
+type FieldOrientation = "horizontal" | "vertical";
 type FieldKeySourceMode = "manual" | "datasource" | "json";
 type ViewMode = "designer" | "viewer";
 
@@ -57,6 +76,7 @@ interface KeyOption {
   value: string;
   label: string;
   dataType?: string;
+  options?: string[];
 }
 
 interface TemplateField {
@@ -64,6 +84,10 @@ interface TemplateField {
   key: string;
   label: string;
   variablesSampleData: string;
+  options: string[];
+  imageDataUrl: string;
+  labelOrientation: FieldOrientation;
+  optionsOrientation: FieldOrientation;
   showLabel: boolean;
   type: FieldType;
   page: number;
@@ -167,7 +191,10 @@ const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSiz
   checkbox: { w: 16, h: 16, fontSize: 10, align: "center" },
   date: { w: 120, h: 20, fontSize: 10, align: "left" },
   signature: { w: 200, h: 30, fontSize: 10, align: "left" },
-  multiVariableText: { w: 220, h: 28, fontSize: 10, align: "left" }
+  multiVariableText: { w: 220, h: 28, fontSize: 10, align: "left" },
+  select: { w: 160, h: 24, fontSize: 10, align: "left" },
+  radio: { w: 160, h: 36, fontSize: 10, align: "left" },
+  image: { w: 140, h: 90, fontSize: 10, align: "center" }
 };
 const BUILTIN_COMPUTED_KEY_OPTIONS: KeyOption[] = [
   { value: "__currentDate", label: "__currentDate (alias __today)", dataType: "Date" },
@@ -205,18 +232,38 @@ const TOOL_RAIL_ITEMS: Array<{
   { id: "line", type: "text", glyph: "LN", tooltip: "Line", label: "Line", keyBase: "line", seedLabel: "Line", w: 180, h: 12 },
   { id: "box", type: "text", glyph: "BOX", tooltip: "Rectangle", label: "Rectangle", keyBase: "box", seedLabel: "Rectangle", w: 140, h: 80 },
   { id: "circle", type: "text", glyph: "O", tooltip: "Circle", label: "Circle", keyBase: "circle", seedLabel: "Circle", w: 64, h: 64, align: "center" },
-  { id: "image", type: "text", glyph: "IMG", tooltip: "Image", label: "Image", keyBase: "image", seedLabel: "Image", w: 140, h: 90 },
+  { id: "image", type: "image", glyph: "IMG", tooltip: "Image", label: "Image", keyBase: "image", seedLabel: "Image", w: 140, h: 90 },
   { id: "link", type: "text", glyph: "LNK", tooltip: "Link", label: "Link", keyBase: "link", seedLabel: "Link", w: 180, h: 22 },
   { id: "signaturePad", type: "signature", glyph: "SG", tooltip: "Signature pad", label: "Signature pad", keyBase: "signaturePad" },
   { id: "qr", type: "text", glyph: "QR", tooltip: "QR code", label: "QR code", keyBase: "qr", seedLabel: "QR Code", w: 86, h: 86, align: "center" },
   { id: "date", type: "date", glyph: "CAL", tooltip: "Date field", label: "Date field", keyBase: "date" },
   { id: "time", type: "date", glyph: "CLK", tooltip: "Time field", label: "Time field", keyBase: "time", seedLabel: "Time", w: 120, h: 20 },
-  { id: "select", type: "text", glyph: "SEL", tooltip: "Select", label: "Select", keyBase: "select", seedLabel: "Select", w: 140, h: 22 },
+  { id: "select", type: "select", glyph: "SEL", tooltip: "Select", label: "Select", keyBase: "select", seedLabel: "Select", w: 140, h: 24 },
   { id: "checkbox", type: "checkbox", glyph: "CHK", tooltip: "Checkbox", label: "Checkbox", keyBase: "checkbox" },
-  { id: "radio", type: "checkbox", glyph: "RAD", tooltip: "Radio", label: "Radio", keyBase: "radio", seedLabel: "Radio" },
+  { id: "radio", type: "radio", glyph: "RAD", tooltip: "Radio", label: "Radio", keyBase: "radio", seedLabel: "Radio", w: 160, h: 36 },
   { id: "barSmall", type: "text", glyph: "BAR", tooltip: "Barcode", label: "Barcode", keyBase: "barcode", seedLabel: "Barcode", w: 160, h: 24, align: "center" },
   { id: "barWide", type: "text", glyph: "BAR2", tooltip: "Wide barcode", label: "Wide barcode", keyBase: "barcodeWide", seedLabel: "Wide Barcode", w: 220, h: 24, align: "center" }
 ];
+const TOOL_VISIBILITY_PROP_BY_ID: Record<string, keyof PdfDesignerCoreProps> = {
+  text: "showPaletteToolText",
+  multiVariableText: "showPaletteToolMultiVariableText",
+  signature: "showPaletteToolSignature",
+  table: "showPaletteToolTable",
+  line: "showPaletteToolLine",
+  box: "showPaletteToolBox",
+  circle: "showPaletteToolCircle",
+  image: "showPaletteToolImage",
+  link: "showPaletteToolLink",
+  signaturePad: "showPaletteToolSignaturePad",
+  qr: "showPaletteToolQr",
+  date: "showPaletteToolDate",
+  time: "showPaletteToolTime",
+  select: "showPaletteToolSelect",
+  checkbox: "showPaletteToolCheckbox",
+  radio: "showPaletteToolRadio",
+  barSmall: "showPaletteToolBarcode",
+  barWide: "showPaletteToolBarcodeWide"
+};
 
 function toNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
@@ -229,7 +276,16 @@ function createFieldId(): string {
 }
 
 function isFieldType(value: unknown): value is FieldType {
-  return value === "text" || value === "checkbox" || value === "date" || value === "signature" || value === "multiVariableText";
+  return (
+    value === "text" ||
+    value === "checkbox" ||
+    value === "date" ||
+    value === "signature" ||
+    value === "multiVariableText" ||
+    value === "select" ||
+    value === "radio" ||
+    value === "image"
+  );
 }
 
 function normalizeFieldTypeInput(value: unknown): FieldType | undefined {
@@ -243,7 +299,15 @@ function normalizeFieldTypeInput(value: unknown): FieldType | undefined {
   if (normalized === "multivariabletext" || normalized === "multi_variable_text" || normalized === "multi-variable-text") {
     return "multiVariableText";
   }
-  if (normalized === "text" || normalized === "checkbox" || normalized === "date" || normalized === "signature") {
+  if (
+    normalized === "text" ||
+    normalized === "checkbox" ||
+    normalized === "date" ||
+    normalized === "signature" ||
+    normalized === "select" ||
+    normalized === "radio" ||
+    normalized === "image"
+  ) {
     return normalized as FieldType;
   }
   return undefined;
@@ -251,6 +315,10 @@ function normalizeFieldTypeInput(value: unknown): FieldType | undefined {
 
 function isAlign(value: unknown): value is FieldAlign {
   return value === "left" || value === "center" || value === "right";
+}
+
+function isFieldOrientation(value: unknown): value is FieldOrientation {
+  return value === "horizontal" || value === "vertical";
 }
 
 function isFieldKeySourceMode(value: unknown): value is FieldKeySourceMode {
@@ -344,7 +412,8 @@ function normalizeKeyOption(value: unknown): KeyOption | undefined {
 
   const label = toTrimmedString(record.label) || key;
   const dataType = toTrimmedString(record.type ?? record.dataType) || undefined;
-  return { value: key, label, dataType };
+  const options = normalizeOptionStrings(record.options ?? record.enumOptions ?? record.enumValues ?? record.values);
+  return { value: key, label, dataType, options: options.length > 0 ? options : undefined };
 }
 
 function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
@@ -359,8 +428,17 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
   if (normalized.includes("boolean")) {
     return "checkbox";
   }
-  if (normalized.includes("date") || normalized.includes("time")) {
+  if (normalized.includes("enum")) {
+    return "select";
+  }
+  if (normalized.includes("datetime") || normalized.includes("timestamp") || normalized.includes("time")) {
+    return "text";
+  }
+  if (normalized.includes("date")) {
     return "date";
+  }
+  if (normalized.includes("image") || normalized.includes("photo") || normalized.includes("picture")) {
+    return "image";
   }
   if (normalized.includes("signature")) {
     return "signature";
@@ -369,6 +447,73 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
     return "multiVariableText";
   }
   return undefined;
+}
+
+function normalizeOptionStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const options: string[] = [];
+  for (const item of value) {
+    if (item === null || item === undefined) {
+      continue;
+    }
+    let text = "";
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+      text = String(item).trim();
+    } else if (typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      text = toTrimmedString(record.label ?? record.value ?? record.key);
+    }
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    options.push(text);
+  }
+  return options;
+}
+
+function defaultOptionsForFieldType(type: FieldType): string[] {
+  if (type === "select" || type === "radio") {
+    return ["option1", "option2"];
+  }
+  return [];
+}
+
+function defaultLabelOrientationForFieldType(_type: FieldType): FieldOrientation {
+  return "horizontal";
+}
+
+function defaultOptionsOrientationForFieldType(type: FieldType): FieldOrientation {
+  return type === "radio" ? "vertical" : "horizontal";
+}
+
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isEnumerationDataType(dataType?: string): boolean {
+  if (!dataType) {
+    return false;
+  }
+  return dataType.toLowerCase().includes("enum");
+}
+
+function isEnumerationKeyOption(option?: KeyOption): boolean {
+  if (!option) {
+    return false;
+  }
+  return isEnumerationDataType(option.dataType) || Boolean(option.options && option.options.length > 0);
 }
 
 function dedupeKeyOptions(options: KeyOption[]): KeyOption[] {
@@ -423,6 +568,19 @@ function normalizeField(input: any, index: number): TemplateField {
       : typeof input?.variableSampleData === "string"
         ? input.variableSampleData
         : "";
+  const options = normalizeOptionStrings(input?.options ?? input?.enumOptions ?? input?.values);
+  const imageDataUrl =
+    typeof input?.imageDataUrl === "string"
+      ? input.imageDataUrl
+      : typeof input?.imageData === "string"
+        ? input.imageData
+        : "";
+  const labelOrientation = isFieldOrientation(input?.labelOrientation)
+    ? input.labelOrientation
+    : defaultLabelOrientationForFieldType(type);
+  const optionsOrientation = isFieldOrientation(input?.optionsOrientation)
+    ? input.optionsOrientation
+    : defaultOptionsOrientationForFieldType(type);
   const showLabel = input?.showLabel !== false;
   const page = Math.max(0, Math.floor(toNumber(input?.page, 0)));
   const x = Math.max(0, toNumber(input?.x, 48));
@@ -433,7 +591,26 @@ function normalizeField(input: any, index: number): TemplateField {
   const align = isAlign(input?.align) ? input.align : defaults.align;
   const required = Boolean(input?.required);
 
-  return { id, key, label, variablesSampleData, showLabel, type, page, x, y, w, h, fontSize, align, required };
+  return {
+    id,
+    key,
+    label,
+    variablesSampleData,
+    options: options.length > 0 ? options : defaultOptionsForFieldType(type),
+    imageDataUrl,
+    labelOrientation,
+    optionsOrientation,
+    showLabel,
+    type,
+    page,
+    x,
+    y,
+    w,
+    h,
+    fontSize,
+    align,
+    required
+  };
 }
 
 function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: string } {
@@ -490,6 +667,10 @@ function buildDataPayload(
     if (field.type === "multiVariableText") {
       continue;
     }
+    if (field.type === "image") {
+      // Static template images are stored on the field definition, not in Data JSON.
+      continue;
+    }
     payload[field.key] = typeof rawValue === "string" ? rawValue : "";
   }
   return payload;
@@ -511,6 +692,10 @@ function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefine
       key: field.key,
       label: field.label,
       variablesSampleData: field.variablesSampleData,
+      options: normalizeOptionStrings(field.options),
+      imageDataUrl: field.imageDataUrl,
+      labelOrientation: field.labelOrientation,
+      optionsOrientation: field.optionsOrientation,
       showLabel: field.showLabel,
       type: field.type,
       page: field.page,
@@ -571,7 +756,7 @@ function nextPrefixedFieldKey(prefix: string, fields: TemplateField[]): string {
 }
 
 function cloneFields(fields: TemplateField[]): TemplateField[] {
-  return fields.map(field => ({ ...field }));
+  return fields.map(field => ({ ...field, options: [...field.options] }));
 }
 
 function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean {
@@ -586,6 +771,10 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
       a.key !== b.key ||
       a.label !== b.label ||
       a.variablesSampleData !== b.variablesSampleData ||
+      a.imageDataUrl !== b.imageDataUrl ||
+      a.options.length !== b.options.length ||
+      a.labelOrientation !== b.labelOrientation ||
+      a.optionsOrientation !== b.optionsOrientation ||
       a.showLabel !== b.showLabel ||
       a.type !== b.type ||
       a.page !== b.page ||
@@ -598,6 +787,11 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
       a.required !== b.required
     ) {
       return false;
+    }
+    for (let optionIndex = 0; optionIndex < a.options.length; optionIndex += 1) {
+      if (a.options[optionIndex] !== b.options[optionIndex]) {
+        return false;
+      }
     }
   }
   return true;
@@ -895,6 +1089,13 @@ function normalizeSignatureImageFromUnknown(value: unknown): string | undefined 
   return extracted ? normalizeSignatureImageDataUrl(extracted) : undefined;
 }
 
+function normalizeImageDataFromUnknown(value: unknown): string {
+  if (typeof value === "string") {
+    return normalizeSignatureImageDataUrl(value) || "";
+  }
+  return normalizeSignatureImageFromUnknown(value) || "";
+}
+
 function getSigWebPointCount(globalObject: any): number | undefined {
   const numberOfPointsFn = globalObject?.NumberOfTabletPoints;
   if (typeof numberOfPointsFn !== "function") {
@@ -1071,7 +1272,7 @@ function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknow
   if (field.type === "checkbox") {
     return toBooleanLike(rawValue) ?? false;
   }
-  if (field.type === "signature") {
+  if (field.type === "signature" || field.type === "image") {
     const signatureImage = normalizeSignatureImageFromUnknown(rawValue);
     if (signatureImage) {
       return signatureImage;
@@ -1084,6 +1285,18 @@ function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknow
 function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFieldValue | undefined): ViewerFieldValue {
   if (field.type === "checkbox") {
     return typeof previousValue === "boolean" ? previousValue : false;
+  }
+  if (field.type === "image") {
+    if (typeof previousValue === "string") {
+      return previousValue;
+    }
+    return normalizeImageDataFromUnknown(field.imageDataUrl);
+  }
+  if (field.type === "select" || field.type === "radio") {
+    if (typeof previousValue === "string") {
+      return previousValue;
+    }
+    return field.options[0] || "";
   }
   if (typeof previousValue === "string") {
     return previousValue;
@@ -1310,6 +1523,19 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const isViewerMode = viewMode === "viewer";
   const hasSidebarSections = showPaletteSection || showPagesSection;
   const hasRightPanelSections = showFieldProperties || showFieldsSection;
+  const paletteToolVisibilityById = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const tool of TOOL_RAIL_ITEMS) {
+      const propName = TOOL_VISIBILITY_PROP_BY_ID[tool.id];
+      const raw = propName ? props[propName] : undefined;
+      map[tool.id] = raw !== false;
+    }
+    return map;
+  }, [props]);
+  const visibleToolRailItems = useMemo(
+    () => TOOL_RAIL_ITEMS.filter(tool => paletteToolVisibilityById[tool.id] !== false),
+    [paletteToolVisibilityById]
+  );
   const hasVisibleFieldPropertyControls =
     showPropertyKey ||
     showPropertyLabel ||
@@ -1364,6 +1590,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const [pageJumpInput, setPageJumpInput] = useState("1");
   const [draggedFieldListItemId, setDraggedFieldListItemId] = useState<string | null>(null);
   const [fieldListDropTargetId, setFieldListDropTargetId] = useState<string | null>(null);
+  const [optionDraft, setOptionDraft] = useState("");
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const imageObjectUrlRef = useRef<string | null>(null);
   const dataSourceItem = useMemo(() => props.dataSource?.[0], [props.dataSource]);
   const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
@@ -2068,7 +2296,22 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       x: number,
       y: number,
       overrides?: Partial<
-        Pick<TemplateField, "key" | "label" | "variablesSampleData" | "w" | "h" | "fontSize" | "align" | "showLabel" | "required">
+        Pick<
+          TemplateField,
+          | "key"
+          | "label"
+          | "variablesSampleData"
+          | "options"
+          | "imageDataUrl"
+          | "labelOrientation"
+          | "optionsOrientation"
+          | "w"
+          | "h"
+          | "fontSize"
+          | "align"
+          | "showLabel"
+          | "required"
+        >
       >
     ): TemplateField => {
       const defaults = FIELD_DEFAULTS[type];
@@ -2086,6 +2329,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         key,
         label: overrides?.label ?? "",
         variablesSampleData: overrides?.variablesSampleData ?? "",
+        options: overrides?.options ? [...overrides.options] : defaultOptionsForFieldType(type),
+        imageDataUrl: overrides?.imageDataUrl ?? "",
+        labelOrientation:
+          overrides?.labelOrientation && isFieldOrientation(overrides.labelOrientation)
+            ? overrides.labelOrientation
+            : defaultLabelOrientationForFieldType(type),
+        optionsOrientation:
+          overrides?.optionsOrientation && isFieldOrientation(overrides.optionsOrientation)
+            ? overrides.optionsOrientation
+            : defaultOptionsOrientationForFieldType(type),
         showLabel: overrides?.showLabel ?? true,
         type,
         page: pageIndex,
@@ -2107,7 +2360,22 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       x: number,
       y: number,
       overrides?: Partial<
-        Pick<TemplateField, "key" | "label" | "variablesSampleData" | "w" | "h" | "fontSize" | "align" | "showLabel" | "required">
+        Pick<
+          TemplateField,
+          | "key"
+          | "label"
+          | "variablesSampleData"
+          | "options"
+          | "imageDataUrl"
+          | "labelOrientation"
+          | "optionsOrientation"
+          | "w"
+          | "h"
+          | "fontSize"
+          | "align"
+          | "showLabel"
+          | "required"
+        >
       >
     ) => {
       const field = createField(type, x, y, overrides);
@@ -2121,7 +2389,22 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     (
       type: FieldType,
       overrides?: Partial<
-        Pick<TemplateField, "key" | "label" | "variablesSampleData" | "w" | "h" | "fontSize" | "align" | "showLabel" | "required">
+        Pick<
+          TemplateField,
+          | "key"
+          | "label"
+          | "variablesSampleData"
+          | "options"
+          | "imageDataUrl"
+          | "labelOrientation"
+          | "optionsOrientation"
+          | "w"
+          | "h"
+          | "fontSize"
+          | "align"
+          | "showLabel"
+          | "required"
+        >
       >
     ) => {
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
@@ -2241,6 +2524,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     () => fields.find(field => field.id === selectedFieldId) || null,
     [fields, selectedFieldId]
   );
+  useEffect(() => {
+    setOptionDraft("");
+    setImageUploadError(null);
+  }, [selectedFieldId]);
+
   const keyInputState = useMemo(() => {
     if (fieldKeySourceMode === "datasource") {
       return {
@@ -2280,6 +2568,52 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
     return [{ value: currentValue, label: `${currentValue} (current)` }, ...keyInputState.options];
   }, [keyInputState, selectedField]);
+  const selectedFieldSourceKeyOption = useMemo(() => {
+    if (keyInputState.mode !== "dropdown" || !selectedField) {
+      return undefined;
+    }
+    return keyInputState.options.find(option => option.value === selectedField.key);
+  }, [keyInputState, selectedField]);
+  const selectedFieldEnumOptions = useMemo(
+    () => normalizeOptionStrings(selectedFieldSourceKeyOption?.options),
+    [selectedFieldSourceKeyOption]
+  );
+  const selectedFieldIsEnumBound =
+    Boolean(selectedField) &&
+    (selectedField?.type === "select" || selectedField?.type === "radio") &&
+    isEnumerationKeyOption(selectedFieldSourceKeyOption);
+  const selectedFieldEffectiveOptions = useMemo(() => {
+    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+      return [] as string[];
+    }
+    if (selectedFieldIsEnumBound && selectedFieldEnumOptions.length > 0) {
+      return selectedFieldEnumOptions;
+    }
+    return selectedField.options.length > 0 ? selectedField.options : defaultOptionsForFieldType(selectedField.type);
+  }, [selectedField, selectedFieldIsEnumBound, selectedFieldEnumOptions]);
+  const selectedFieldIsImageKeyBound =
+    Boolean(selectedField) && selectedField?.type === "image" && Boolean(selectedFieldSourceKeyOption);
+  const selectedFieldImagePreview = useMemo(() => {
+    if (!selectedField || selectedField.type !== "image") {
+      return "";
+    }
+    const keyedImage = normalizeImageDataFromUnknown(viewerFieldValues[selectedField.key]);
+    const staticImage = normalizeImageDataFromUnknown(selectedField.imageDataUrl);
+    return keyedImage || staticImage;
+  }, [selectedField, viewerFieldValues]);
+
+  useEffect(() => {
+    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+      return;
+    }
+    if (!selectedFieldIsEnumBound || selectedFieldEnumOptions.length === 0) {
+      return;
+    }
+    if (areStringArraysEqual(selectedField.options, selectedFieldEnumOptions)) {
+      return;
+    }
+    updateField(selectedField.id, { options: [...selectedFieldEnumOptions] }, { history: false });
+  }, [selectedField, selectedFieldIsEnumBound, selectedFieldEnumOptions, updateField]);
 
   useEffect(() => {
     if (!dragState) {
@@ -2398,9 +2732,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const selectedPlacementTool = useMemo(
-    () => TOOL_RAIL_ITEMS.find(tool => tool.id === placementToolId) || null,
-    [placementToolId]
+    () => visibleToolRailItems.find(tool => tool.id === placementToolId) || null,
+    [placementToolId, visibleToolRailItems]
   );
+  useEffect(() => {
+    if (placementToolId && !selectedPlacementTool) {
+      setPlacementToolId(null);
+    }
+  }, [placementToolId, selectedPlacementTool]);
 
   const buildOverridesForTool = useCallback(
     (tool: (typeof TOOL_RAIL_ITEMS)[number]) => {
@@ -2469,8 +2808,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     (event: ReactDragEvent<HTMLDivElement>) => {
       const droppedToolId = event.dataTransfer.getData(PALETTE_TYPE_DRAG_TYPE).trim();
       const droppedTool =
-        TOOL_RAIL_ITEMS.find(tool => tool.id === droppedToolId) ||
-        TOOL_RAIL_ITEMS.find(tool => tool.type === droppedToolId);
+        visibleToolRailItems.find(tool => tool.id === droppedToolId) ||
+        visibleToolRailItems.find(tool => tool.type === droppedToolId);
       if (droppedTool) {
         event.preventDefault();
         placeToolAtClientPoint(droppedTool, event.clientX, event.clientY);
@@ -2482,7 +2821,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         placeAtClientPoint(droppedToolId, event.clientX, event.clientY);
       }
     },
-    [placeAtClientPoint, placeToolAtClientPoint]
+    [placeAtClientPoint, placeToolAtClientPoint, visibleToolRailItems]
   );
 
   const handleOverlayPointerDown = useCallback(
@@ -2657,6 +2996,104 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     });
   }, []);
 
+  const addOptionToSelectedField = useCallback(() => {
+    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+      return;
+    }
+    if (selectedFieldIsEnumBound) {
+      return;
+    }
+    const nextOption = optionDraft.trim();
+    if (!nextOption) {
+      return;
+    }
+    const nextOptions = [...selectedFieldEffectiveOptions];
+    if (nextOptions.includes(nextOption)) {
+      setOptionDraft("");
+      return;
+    }
+    nextOptions.push(nextOption);
+    updateField(selectedField.id, { options: nextOptions });
+    setOptionDraft("");
+  }, [selectedField, selectedFieldIsEnumBound, optionDraft, selectedFieldEffectiveOptions, updateField]);
+
+  const updateSelectedFieldOption = useCallback(
+    (index: number, value: string) => {
+      if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+        return;
+      }
+      if (selectedFieldIsEnumBound) {
+        return;
+      }
+      if (index < 0 || index >= selectedFieldEffectiveOptions.length) {
+        return;
+      }
+      const nextOptions = [...selectedFieldEffectiveOptions];
+      nextOptions[index] = value;
+      updateField(selectedField.id, { options: nextOptions });
+    },
+    [selectedField, selectedFieldIsEnumBound, selectedFieldEffectiveOptions, updateField]
+  );
+
+  const removeSelectedFieldOption = useCallback(
+    (index: number) => {
+      if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+        return;
+      }
+      if (selectedFieldIsEnumBound) {
+        return;
+      }
+      if (index < 0 || index >= selectedFieldEffectiveOptions.length) {
+        return;
+      }
+      const nextOptions = selectedFieldEffectiveOptions.filter((_option, optionIndex) => optionIndex !== index);
+      updateField(selectedField.id, { options: nextOptions });
+    },
+    [selectedField, selectedFieldIsEnumBound, selectedFieldEffectiveOptions, updateField]
+  );
+
+  const handleSelectedFieldImageUpload = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>) => {
+      if (!selectedField || selectedField.type !== "image" || selectedFieldIsImageKeyBound) {
+        return;
+      }
+      const file = event.currentTarget.files?.[0];
+      if (!file) {
+        return;
+      }
+      if (!file.type.toLowerCase().startsWith("image/")) {
+        setImageUploadError("Please choose a valid image file.");
+        event.currentTarget.value = "";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const normalized = normalizeImageDataFromUnknown(reader.result);
+        if (!normalized) {
+          setImageUploadError("Unable to read the selected image.");
+          return;
+        }
+        setImageUploadError(null);
+        updateField(selectedField.id, { imageDataUrl: normalized });
+      };
+      reader.onerror = () => {
+        setImageUploadError("Unable to read the selected image.");
+      };
+      reader.readAsDataURL(file);
+      event.currentTarget.value = "";
+    },
+    [selectedField, selectedFieldIsImageKeyBound, updateField]
+  );
+
+  const clearSelectedFieldImage = useCallback(() => {
+    if (!selectedField || selectedField.type !== "image") {
+      return;
+    }
+    setImageUploadError(null);
+    updateField(selectedField.id, { imageDataUrl: "" });
+  }, [selectedField, updateField]);
+
   const clearViewerSignature = useCallback(
     (fieldKey: string) => {
       setViewerFieldValue(fieldKey, "");
@@ -2743,7 +3180,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     (field: TemplateField): ReactElement => {
       if (field.type === "checkbox") {
         return (
-          <label className="pdf-template-designer__viewer-checkbox">
+          <label
+            className={`pdf-template-designer__viewer-checkbox${
+              field.labelOrientation === "vertical"
+                ? " pdf-template-designer__viewer-checkbox--vertical"
+                : " pdf-template-designer__viewer-checkbox--horizontal"
+            }`}
+          >
             <input
               type="checkbox"
               checked={Boolean(viewerFieldValues[field.key])}
@@ -2775,6 +3218,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         );
       }
 
+      if (field.type === "image") {
+        const keyedImage = normalizeImageDataFromUnknown(viewerFieldValues[field.key]);
+        const staticImage = normalizeImageDataFromUnknown(field.imageDataUrl);
+        const imageSrc = keyedImage || staticImage;
+        if (imageSrc) {
+          return <img className="pdf-template-designer__viewer-image" src={imageSrc} alt={field.label || field.key || "Image"} draggable={false} />;
+        }
+        return <div className="pdf-template-designer__viewer-image-placeholder">{field.label || field.key || "Image"}</div>;
+      }
+
       if (field.type === "multiVariableText") {
         const resolved = resolveMultiVariableText(field.variablesSampleData || "", viewerTemplateValues);
         return <div className="pdf-template-designer__viewer-multi">{resolved}</div>;
@@ -2788,9 +3241,30 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const value = typeof rawValue === "string" ? rawValue : "";
       const computedFallback = isComputedTokenKey(field.key) && !value.trim() ? resolveComputedTokenValue(field.key) || "" : "";
       const displayValue = value.trim() ? value : computedFallback;
-
-      if (field.type === "date") {
-        if (isComputedTokenKey(field.key)) {
+      if (field.type === "select") {
+        const options = field.options.length > 0 ? field.options : defaultOptionsForFieldType(field.type);
+        const hasDisplayValue = displayValue.trim().length > 0;
+        const hasOptionValue = options.some(option => option === displayValue);
+        return (
+          <select
+            className="pdf-template-designer__viewer-input pdf-template-designer__viewer-select"
+            value={displayValue}
+            style={inputStyle}
+            onChange={event => setViewerFieldValue(field.key, event.target.value)}
+          >
+            {!hasDisplayValue ? <option value=""></option> : null}
+            {!hasOptionValue && hasDisplayValue ? <option value={displayValue}>{displayValue}</option> : null}
+            {options.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        );
+      }
+      if (field.type === "radio") {
+        const options = field.options.length > 0 ? field.options : defaultOptionsForFieldType(field.type);
+        if (options.length === 0) {
           return (
             <input
               className="pdf-template-designer__viewer-input"
@@ -2799,6 +3273,42 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               style={inputStyle}
               onChange={event => setViewerFieldValue(field.key, event.target.value)}
             />
+          );
+        }
+        return (
+          <div
+            className={`pdf-template-designer__viewer-radio-group${
+              field.optionsOrientation === "horizontal"
+                ? " pdf-template-designer__viewer-radio-group--horizontal"
+                : " pdf-template-designer__viewer-radio-group--vertical"
+            }`}
+          >
+            {options.map(option => (
+              <label key={option} className="pdf-template-designer__viewer-radio-option">
+                <input
+                  type="radio"
+                  name={`radio_${field.id}`}
+                  value={option}
+                  checked={displayValue === option}
+                  onChange={event => {
+                    if (event.target.checked) {
+                      setViewerFieldValue(field.key, option);
+                    }
+                  }}
+                />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+        );
+      }
+
+      if (field.type === "date") {
+        if (isComputedTokenKey(field.key)) {
+          return (
+            <div className="pdf-template-designer__viewer-date-static" style={inputStyle}>
+              {displayValue}
+            </div>
           );
         }
 
@@ -3012,7 +3522,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           {showPaletteSection ? (
           <div>
             <div className="pdf-template-designer__palette">
-              {TOOL_RAIL_ITEMS.map(item => {
+              {visibleToolRailItems.map(item => {
                 return (
                   <button
                     key={`palette_${item.id}`}
@@ -3033,6 +3543,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   </button>
                 );
               })}
+              {visibleToolRailItems.length === 0 ? (
+                <div className="pdf-template-designer__status">No palette tools are enabled in widget settings.</div>
+              ) : null}
             </div>
           </div>
           ) : null}
@@ -3336,13 +3849,26 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     <select
                       className="pdf-template-designer__select"
                       value={selectedField.type}
-                      onChange={event => updateField(selectedField.id, { type: event.target.value as FieldType })}
+                      onChange={event => {
+                        const nextType = event.target.value as FieldType;
+                        const nextChanges: Partial<TemplateField> = { type: nextType };
+                        if (nextType === "select" || nextType === "radio") {
+                          const nextOptions =
+                            selectedField.options.length > 0 ? selectedField.options : defaultOptionsForFieldType(nextType);
+                          nextChanges.options = [...nextOptions];
+                        }
+                        nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
+                        updateField(selectedField.id, nextChanges);
+                      }}
                     >
                       <option value="text">Text</option>
                       <option value="multiVariableText">Multi-Variable Text</option>
                       <option value="checkbox">Checkbox</option>
                       <option value="date">Date</option>
                       <option value="signature">Signature</option>
+                      <option value="select">Select</option>
+                      <option value="radio">Radio</option>
+                      <option value="image">Image</option>
                     </select>
                   </div>
                   ) : null}
@@ -3358,9 +3884,21 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                           if (!nextKey) {
                             return;
                           }
-                          const selectedOption = selectedFieldKeyOptions.find(option => option.value === nextKey);
+                          const selectedOption = keyInputState.options.find(option => option.value === nextKey);
                           const mappedType = mapDataTypeToFieldType(selectedOption?.dataType);
-                          updateField(selectedField.id, mappedType ? { key: nextKey, type: mappedType } : { key: nextKey });
+                          const nextChanges: Partial<TemplateField> = mappedType
+                            ? { key: nextKey, type: mappedType }
+                            : { key: nextKey };
+                          const nextType = mappedType || selectedField.type;
+                          if ((nextType === "select" || nextType === "radio") && isEnumerationKeyOption(selectedOption)) {
+                            const enumOptions = normalizeOptionStrings(selectedOption?.options);
+                            nextChanges.options =
+                              enumOptions.length > 0 ? enumOptions : defaultOptionsForFieldType(nextType);
+                          }
+                          if (mappedType) {
+                            nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
+                          }
+                          updateField(selectedField.id, nextChanges);
                         }}
                       >
                         {selectedFieldKeyOptions.length === 0 ? (
@@ -3545,6 +4083,20 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       value={selectedField.label}
                       onChange={event => updateField(selectedField.id, { label: event.target.value })}
                     />
+                    <div className="pdf-template-designer__label">Label orientation</div>
+                    <select
+                      className="pdf-template-designer__select"
+                      value={selectedField.labelOrientation}
+                      onChange={event =>
+                        updateField(selectedField.id, {
+                          labelOrientation: isFieldOrientation(event.target.value) ? event.target.value : "horizontal"
+                        })
+                      }
+                      disabled={!selectedField.showLabel}
+                    >
+                      <option value="horizontal">Horizontal (inline)</option>
+                      <option value="vertical">Vertical (stacked)</option>
+                    </select>
                   </div>
                   ) : null}
                 </div>
@@ -3563,6 +4115,117 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   <div className="pdf-template-designer__status">
                     Add variables with curly brackets, for example <code>{"{name}"}</code>.
                   </div>
+                </div>
+                ) : null}
+
+                {(selectedField.type === "select" || selectedField.type === "radio") ? (
+                <div className="pdf-template-designer__inspector-section">
+                  <div className="pdf-template-designer__label">Options</div>
+                  {selectedField.type === "radio" ? (
+                    <div>
+                      <div className="pdf-template-designer__label">Options orientation</div>
+                      <select
+                        className="pdf-template-designer__select"
+                        value={selectedField.optionsOrientation}
+                        onChange={event =>
+                          updateField(selectedField.id, {
+                            optionsOrientation: isFieldOrientation(event.target.value) ? event.target.value : "vertical"
+                          })
+                        }
+                      >
+                        <option value="vertical">Vertical</option>
+                        <option value="horizontal">Horizontal</option>
+                      </select>
+                    </div>
+                  ) : null}
+                  {selectedFieldIsEnumBound ? (
+                    <div className="pdf-template-designer__status">
+                      Options are provided by the selected enumeration key and cannot be edited here.
+                    </div>
+                  ) : (
+                    <div className="pdf-template-designer__option-add">
+                      <input
+                        className="pdf-template-designer__input"
+                        value={optionDraft}
+                        onChange={event => setOptionDraft(event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            addOptionToSelectedField();
+                          }
+                        }}
+                        placeholder="Enter an option"
+                      />
+                      <button
+                        className="pdf-template-designer__button"
+                        type="button"
+                        onClick={addOptionToSelectedField}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+                  <div className="pdf-template-designer__option-list">
+                    {selectedFieldEffectiveOptions.length === 0 ? (
+                      <div className="pdf-template-designer__status">No options configured.</div>
+                    ) : (
+                      selectedFieldEffectiveOptions.map((option, index) => (
+                        <div className="pdf-template-designer__option-row" key={`${option}_${index}`}>
+                          <input
+                            className="pdf-template-designer__input"
+                            value={option}
+                            disabled={selectedFieldIsEnumBound}
+                            onChange={event => updateSelectedFieldOption(index, event.target.value)}
+                          />
+                          {!selectedFieldIsEnumBound ? (
+                            <button
+                              className="pdf-template-designer__button"
+                              type="button"
+                              onClick={() => removeSelectedFieldOption(index)}
+                            >
+                              x
+                            </button>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                ) : null}
+
+                {selectedField.type === "image" ? (
+                <div className="pdf-template-designer__inspector-section">
+                  <div className="pdf-template-designer__label">Image Source</div>
+                  {selectedFieldIsImageKeyBound ? (
+                    <div className="pdf-template-designer__status">
+                      Bound to key <code>{selectedField.key}</code>. Provide a base64 image value in Data JSON for this key.
+                    </div>
+                  ) : (
+                    <input
+                      className="pdf-template-designer__input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSelectedFieldImageUpload}
+                    />
+                  )}
+                  {imageUploadError ? <div className="pdf-template-designer__alert">{imageUploadError}</div> : null}
+                  <div className="pdf-template-designer__image-preview">
+                    {selectedFieldImagePreview ? (
+                      <img src={selectedFieldImagePreview} alt={selectedField.label || selectedField.key || "Image preview"} />
+                    ) : (
+                      <div className="pdf-template-designer__status">No image selected.</div>
+                    )}
+                  </div>
+                  {!selectedFieldIsImageKeyBound ? (
+                    <button
+                      className="pdf-template-designer__button"
+                      type="button"
+                      onClick={clearSelectedFieldImage}
+                      disabled={!normalizeImageDataFromUnknown(selectedField.imageDataUrl)}
+                    >
+                      Clear image
+                    </button>
+                  ) : null}
                 </div>
                 ) : null}
 
