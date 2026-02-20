@@ -569,10 +569,7 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return "";
         }
         String label = field.label == null ? "" : field.label.trim();
-        if (!label.isEmpty()) {
-            return normalizePdfText(label);
-        }
-        return normalizePdfText(field.key == null ? "" : field.key.trim());
+        return label.isEmpty() ? "" : normalizePdfText(label);
     }
 
     private static boolean isVerticalLabelOrientation(TemplateField field) {

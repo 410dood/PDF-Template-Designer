@@ -4176,7 +4176,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       checked={selectedField.showLabel}
                       onChange={event => updateField(selectedField.id, { showLabel: event.target.checked })}
                     />
-                    Editable
+                    Show label
                   </label>
                   ) : null}
                   {showPropertyRequired ? (
@@ -4189,6 +4189,38 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     Required
                   </label>
                   ) : null}
+                </div>
+                ) : null}
+
+                {showPropertyLabel ? (
+                <div className="pdf-template-designer__inspector-section">
+                  <div>
+                    <div className="pdf-template-designer__label">Label</div>
+                    <input
+                      className="pdf-template-designer__input"
+                      value={selectedField.label}
+                      onChange={event => updateField(selectedField.id, { label: event.target.value })}
+                    />
+                  </div>
+                  {selectedField.showLabel ? (
+                  <div>
+                    <div className="pdf-template-designer__label">Label orientation</div>
+                    <select
+                      className="pdf-template-designer__select"
+                      value={selectedField.labelOrientation}
+                      onChange={event =>
+                        updateField(selectedField.id, {
+                          labelOrientation: isFieldOrientation(event.target.value) ? event.target.value : "horizontal"
+                        })
+                      }
+                    >
+                      <option value="horizontal">Horizontal (inline)</option>
+                      <option value="vertical">Vertical (stacked)</option>
+                    </select>
+                  </div>
+                  ) : (
+                  <div className="pdf-template-designer__status">Label is hidden in output for this field.</div>
+                  )}
                 </div>
                 ) : null}
 
@@ -4286,7 +4318,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 </div>
                 ) : null}
 
-                {(showPropertyFontSize || showPropertyLabel) ? (
+                {showPropertyFontSize ? (
                 <div className="pdf-template-designer__inspector-section">
                   {showPropertyFontSize ? (
                   <div className="pdf-template-designer__inspector-grid-two">
@@ -4306,30 +4338,6 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                         }
                       />
                     </div>
-                  </div>
-                  ) : null}
-                  {showPropertyLabel ? (
-                  <div>
-                    <div className="pdf-template-designer__label">Label</div>
-                    <input
-                      className="pdf-template-designer__input"
-                      value={selectedField.label}
-                      onChange={event => updateField(selectedField.id, { label: event.target.value })}
-                    />
-                    <div className="pdf-template-designer__label">Label orientation</div>
-                    <select
-                      className="pdf-template-designer__select"
-                      value={selectedField.labelOrientation}
-                      onChange={event =>
-                        updateField(selectedField.id, {
-                          labelOrientation: isFieldOrientation(event.target.value) ? event.target.value : "horizontal"
-                        })
-                      }
-                      disabled={!selectedField.showLabel}
-                    >
-                      <option value="horizontal">Horizontal (inline)</option>
-                      <option value="vertical">Vertical (stacked)</option>
-                    </select>
                   </div>
                   ) : null}
                 </div>
