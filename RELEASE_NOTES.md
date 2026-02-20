@@ -1,5 +1,18 @@
 # Release Notes
 
+## 0.1.9 - 2026-02-20
+
+### Highlights
+- Hardened Java flattening for date/time formats so `date` fields with time-only (`HH:mm`) or datetime patterns no longer fail formatting.
+- Synchronized signature/image payload extraction behavior across generation paths to reduce runtime inconsistencies.
+
+### Technical Changes
+- Updated `Document.GenerateFlattenedPdf` date/time parsing and formatter handling for:
+  - date-only patterns
+  - time-only patterns
+  - datetime patterns
+- Updated `Document.GenerateFlattenedPdfDelegate` with matching parser/formatter logic to keep behavior aligned.
+
 ## Initial Release
 
 ### Highlights
@@ -17,4 +30,3 @@
 
 ### Module Assets
 - Included Mendix module guidance and Java action stub for flattened PDF generation.
-

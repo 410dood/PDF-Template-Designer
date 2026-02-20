@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -1055,12 +1056,69 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
     }
 
     private static String formatDateLikeValue(Object value, String configuredPattern) {
+        String fallback = normalizePdfText(String.valueOf(value));
+        String pattern = configuredPattern == null ? "" : configuredPattern.trim();
+        if (pattern.isEmpty()) {
+            pattern = "MM/dd/yyyy";
+        }
+
+        boolean hasDateTokens = patternContainsDate(pattern);
+        boolean hasTimeTokens = patternContainsTime(pattern);
+
+        if (hasDateTokens && hasTimeTokens) {
+            LocalDateTime parsedDateTime = tryParseDateTime(value);
+            if (parsedDateTime == null) {
+                LocalDate parsedDate = tryParseDate(value);
+                if (parsedDate != null) {
+                    parsedDateTime = parsedDate.atStartOfDay();
+                }
+            }
+            if (parsedDateTime == null) {
+                return fallback;
+            }
+            DateTimeFormatter formatter = resolveDateTimeFormatter(pattern);
+            try {
+                return normalizePdfText(formatter.format(parsedDateTime));
+            } catch (Exception ignored) {
+                return fallback;
+            }
+        }
+
+        if (hasTimeTokens && !hasDateTokens) {
+            LocalTime parsedTime = tryParseTime(value);
+            if (parsedTime == null) {
+                LocalDateTime parsedDateTime = tryParseDateTime(value);
+                if (parsedDateTime != null) {
+                    parsedTime = parsedDateTime.toLocalTime();
+                }
+            }
+            if (parsedTime == null) {
+                return fallback;
+            }
+            DateTimeFormatter formatter = resolveTimeFormatter(pattern);
+            try {
+                return normalizePdfText(formatter.format(parsedTime));
+            } catch (Exception ignored) {
+                return fallback;
+            }
+        }
+
         LocalDate parsedDate = tryParseDate(value);
         if (parsedDate == null) {
-            return normalizePdfText(String.valueOf(value));
+            LocalDateTime parsedDateTime = tryParseDateTime(value);
+            if (parsedDateTime != null) {
+                parsedDate = parsedDateTime.toLocalDate();
+            }
         }
-        DateTimeFormatter formatter = resolveDateFormatter(configuredPattern);
-        return formatter.format(parsedDate);
+        if (parsedDate == null) {
+            return fallback;
+        }
+        DateTimeFormatter formatter = resolveDateFormatter(pattern);
+        try {
+            return normalizePdfText(formatter.format(parsedDate));
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     private static LocalDate tryParseDate(Object value) {
@@ -1104,18 +1162,176 @@ public class GenerateFlattenedPdfDelegate extends UserAction<byte[]> {
         }
 
         if (text.matches("^-?\\d{10,17}$")) {
-            try {
-                long epoch = Long.parseLong(text);
-                if (text.length() == 10) {
-                    epoch = epoch * 1000L;
-                }
-                return Instant.ofEpochMilli(epoch).atZone(ZoneOffset.UTC).toLocalDate();
-            } catch (NumberFormatException ignored) {
-                // Fall through.
+            Long epochMillis = parseEpochMillisIfNumericText(text);
+            if (epochMillis != null) {
+                return Instant.ofEpochMilli(epochMillis).atZone(ZoneOffset.UTC).toLocalDate();
             }
         }
 
         return null;
+    }
+
+    private static LocalDateTime tryParseDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime) {
+            return (LocalDateTime) value;
+        }
+        if (value instanceof LocalDate) {
+            return ((LocalDate) value).atStartOfDay();
+        }
+        if (value instanceof java.util.Date) {
+            return Instant.ofEpochMilli(((java.util.Date) value).getTime()).atZone(ZoneOffset.UTC).toLocalDateTime();
+        }
+        if (value instanceof Number) {
+            return Instant.ofEpochMilli(((Number) value).longValue()).atZone(ZoneOffset.UTC).toLocalDateTime();
+        }
+
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return OffsetDateTime.parse(text, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return Instant.parse(text).atZone(ZoneOffset.UTC).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalDateTime.parse(text, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalDate.parse(text, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+
+        if (text.matches("^-?\\d{10,17}$")) {
+            Long epochMillis = parseEpochMillisIfNumericText(text);
+            if (epochMillis != null) {
+                return Instant.ofEpochMilli(epochMillis).atZone(ZoneOffset.UTC).toLocalDateTime();
+            }
+        }
+
+        return null;
+    }
+
+    private static LocalTime tryParseTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalTime) {
+            return (LocalTime) value;
+        }
+        if (value instanceof java.util.Date) {
+            return Instant.ofEpochMilli(((java.util.Date) value).getTime()).atZone(ZoneOffset.UTC).toLocalTime();
+        }
+        if (value instanceof Number) {
+            return Instant.ofEpochMilli(((Number) value).longValue()).atZone(ZoneOffset.UTC).toLocalTime();
+        }
+
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return LocalTime.parse(text, DateTimeFormatter.ISO_LOCAL_TIME);
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return OffsetDateTime.parse(text, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toLocalTime();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return Instant.parse(text).atZone(ZoneOffset.UTC).toLocalTime();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalDateTime.parse(text, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalTime();
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalTime.parse(text, DateTimeFormatter.ofPattern("HH:mm", Locale.US));
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalTime.parse(text, DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US));
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalTime.parse(text, DateTimeFormatter.ofPattern("h:mm a", Locale.US));
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+        try {
+            return LocalTime.parse(text, DateTimeFormatter.ofPattern("hh:mm a", Locale.US));
+        } catch (DateTimeParseException ignored) {
+            // Try next format.
+        }
+
+        return null;
+    }
+
+    private static Long parseEpochMillisIfNumericText(String text) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            long epoch = Long.parseLong(text);
+            if (text.length() == 10) {
+                epoch = epoch * 1000L;
+            }
+            return epoch;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static boolean patternContainsDate(String pattern) {
+        if (pattern == null || pattern.trim().isEmpty()) {
+            return true;
+        }
+        String normalized = stripQuotedPatternTokens(pattern);
+        return normalized.matches(".*[yYMdD].*");
+    }
+
+    private static boolean patternContainsTime(String pattern) {
+        if (pattern == null || pattern.trim().isEmpty()) {
+            return false;
+        }
+        String normalized = stripQuotedPatternTokens(pattern);
+        return normalized.matches(".*[HhKkmsS].*");
+    }
+
+    private static String stripQuotedPatternTokens(String pattern) {
+        StringBuilder builder = new StringBuilder();
+        boolean inQuote = false;
+        for (int index = 0; index < pattern.length(); index++) {
+            char current = pattern.charAt(index);
+            if (current == '\'') {
+                inQuote = !inQuote;
+                continue;
+            }
+            if (!inQuote) {
+                builder.append(current);
+            }
+        }
+        return builder.toString();
     }
 
     private static DateTimeFormatter resolveDateFormatter(String configuredPattern) {
