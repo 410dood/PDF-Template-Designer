@@ -128,9 +128,14 @@ The optional `type` value is displayed in the key dropdown and auto-maps widget 
 - `Boolean` -> `checkbox`
 - `Enumeration` -> `select`
 - `Date` -> `date`
-- `DateTime`/`Time` -> `text`
+- `DateTime`/`Time` -> `date`
 - `Image`/`Photo`/`Picture` -> `image`
 - `Signature` -> `signature`
+
+For mapped `date` fields, a default format is also applied:
+- `Date` -> `MM/dd/yyyy`
+- `Time` -> `HH:mm`
+- `DateTime` -> `MM/dd/yyyy HH:mm`
 
 Built-in key options are included in dropdown key-source modes (`datasource`/`json`):
 - `__currentDate` (`__today` alias)

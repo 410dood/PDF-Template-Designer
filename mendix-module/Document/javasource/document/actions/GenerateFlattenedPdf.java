@@ -387,8 +387,8 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
 
     private static void drawBoundedText(PDPageContentStream cs, String value, TemplateField field, float x, float y, float w, float h, float fontSize)
         throws Exception {
-        String text = normalizePdfText(value);
-        if (text.isEmpty()) {
+        String text = normalizePdfTextPreserveLineBreaks(value);
+        if (text.trim().isEmpty()) {
             return;
         }
 
@@ -1019,6 +1019,13 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return "";
         }
         return value.replace("\r", " ").replace("\n", " ");
+    }
+
+    private static String normalizePdfTextPreserveLineBreaks(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return value.replace("\r\n", "\n").replace('\r', '\n').replace('\t', ' ');
     }
 
     private static boolean isTruthy(Object value) {

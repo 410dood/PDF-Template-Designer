@@ -453,6 +453,15 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
   if (!normalized) {
     return undefined;
   }
+  if (normalized.includes("signature")) {
+    return "signature";
+  }
+  if (normalized.includes("image") || normalized.includes("photo") || normalized.includes("picture")) {
+    return "image";
+  }
+  if (normalized.includes("multivariable")) {
+    return "multiVariableText";
+  }
   if (normalized.includes("boolean")) {
     return "checkbox";
   }
@@ -460,19 +469,30 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
     return "select";
   }
   if (normalized.includes("datetime") || normalized.includes("timestamp") || normalized.includes("time")) {
-    return "text";
+    return "date";
   }
   if (normalized.includes("date")) {
     return "date";
   }
-  if (normalized.includes("image") || normalized.includes("photo") || normalized.includes("picture")) {
-    return "image";
+  return undefined;
+}
+
+function mapDataTypeToDateFormat(dataType?: string): string | undefined {
+  if (!dataType) {
+    return undefined;
   }
-  if (normalized.includes("signature")) {
-    return "signature";
+  const normalized = dataType.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
   }
-  if (normalized.includes("multivariable")) {
-    return "multiVariableText";
+  if (normalized.includes("datetime") || normalized.includes("timestamp")) {
+    return "MM/dd/yyyy HH:mm";
+  }
+  if (normalized.includes("time") && !normalized.includes("date")) {
+    return "HH:mm";
+  }
+  if (normalized.includes("date")) {
+    return DEFAULT_DATE_FIELD_FORMAT;
   }
   return undefined;
 }
@@ -1239,6 +1259,61 @@ function normalizeDateInputValue(value: string): string {
     return "";
   }
   return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function normalizeTimeInputValue(value: string): string {
+  if (/^\d{2}:\d{2}$/.test(value)) {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const direct24h = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(trimmed);
+  if (direct24h) {
+    const hours = Number(direct24h[1]);
+    const minutes = Number(direct24h[2]);
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+  }
+  const parsed = Date.parse(`1970-01-01T${trimmed}`);
+  if (!Number.isNaN(parsed)) {
+    const parsedDate = new Date(parsed);
+    return `${String(parsedDate.getHours()).padStart(2, "0")}:${String(parsedDate.getMinutes()).padStart(2, "0")}`;
+  }
+  return "";
+}
+
+function stripQuotedDatePatternTokens(pattern: string): string {
+  let inQuote = false;
+  let sanitized = "";
+  for (const character of pattern) {
+    if (character === "'") {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (!inQuote) {
+      sanitized += character;
+    }
+  }
+  return sanitized;
+}
+
+function patternContainsDateTokens(pattern: string): boolean {
+  if (!pattern.trim()) {
+    return true;
+  }
+  const stripped = stripQuotedDatePatternTokens(pattern);
+  return /[yYMdD]/.test(stripped);
+}
+
+function patternContainsTimeTokens(pattern: string): boolean {
+  if (!pattern.trim()) {
+    return false;
+  }
+  const stripped = stripQuotedDatePatternTokens(pattern);
+  return /[HhKkmsS]/.test(stripped);
 }
 
 function isComputedTokenKey(tokenKey: string): boolean {
@@ -3423,6 +3498,46 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           );
         }
 
+        const configuredFormat = normalizeFieldFormat("date", field.format);
+        const expectsDate = patternContainsDateTokens(configuredFormat);
+        const expectsTime = patternContainsTimeTokens(configuredFormat);
+
+        if (expectsTime && !expectsDate) {
+          const normalizedTimeValue = normalizeTimeInputValue(displayValue);
+          if (!normalizedTimeValue && displayValue) {
+            return (
+              <input
+                className="pdf-template-designer__viewer-input"
+                type="text"
+                value={displayValue}
+                style={inputStyle}
+                onChange={event => setViewerFieldValue(field.key, event.target.value)}
+              />
+            );
+          }
+          return (
+            <input
+              className="pdf-template-designer__viewer-input"
+              type="time"
+              value={normalizedTimeValue}
+              style={inputStyle}
+              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+            />
+          );
+        }
+
+        if (expectsDate && expectsTime) {
+          return (
+            <input
+              className="pdf-template-designer__viewer-input"
+              type="text"
+              value={displayValue}
+              style={inputStyle}
+              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+            />
+          );
+        }
+
         const normalizedDateValue = normalizeDateInputValue(displayValue);
         if (!normalizedDateValue && displayValue) {
           return (
@@ -4000,6 +4115,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                           }
                           const selectedOption = keyInputState.options.find(option => option.value === nextKey);
                           const mappedType = mapDataTypeToFieldType(selectedOption?.dataType);
+                          const mappedDateFormat = mapDataTypeToDateFormat(selectedOption?.dataType);
                           const nextChanges: Partial<TemplateField> = mappedType
                             ? { key: nextKey, type: mappedType }
                             : { key: nextKey };
@@ -4010,7 +4126,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                               enumOptions.length > 0 ? enumOptions : defaultOptionsForFieldType(nextType);
                           }
                           if (nextType === "date") {
-                            nextChanges.format = normalizeFieldFormat("date", selectedField.format);
+                            nextChanges.format = normalizeFieldFormat("date", mappedDateFormat || selectedField.format);
                           }
                           if (mappedType) {
                             nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);

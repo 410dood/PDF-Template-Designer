@@ -1,5 +1,17 @@
 # Release Notes
 
+## Unreleased (post v0.1.9)
+
+### Fixes
+- Eliminated Java action drift by converting `GenerateFlattenedPdfDelegate` into a thin wrapper that delegates to `GenerateFlattenedPdf`.
+- Improved viewer date/time behavior:
+  - time-only date formats now use a time input path
+  - date+time formats now use text input to avoid browser datetime rendering inconsistencies
+- Improved datasource key type mapping:
+  - `DateTime`/`Time` now map to `date` field type
+  - mapped date fields now receive a default format based on source datatype (`MM/dd/yyyy`, `HH:mm`, or `MM/dd/yyyy HH:mm`)
+- Preserved multiline text intent in flattened output by keeping line breaks during bounded text layout.
+
 ## 0.1.9 - 2026-02-20
 
 ### Highlights

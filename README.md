@@ -65,9 +65,14 @@ Placing/selecting an option also auto-maps widget field type for:
 - `Boolean` -> `checkbox`
 - `Enumeration` -> `select`
 - `Date` -> `date`
-- `DateTime`/`Time` -> `text`
+- `DateTime`/`Time` -> `date`
 - `Image`/`Photo`/`Picture` -> `image`
 - `Signature` -> `signature`
+
+For mapped `date` fields, a default format is also applied:
+- `Date` -> `MM/dd/yyyy`
+- `Time` -> `HH:mm`
+- `DateTime` -> `MM/dd/yyyy HH:mm`
 
 **Fixed key options JSON (copy/paste)**
 Use this when `Field key source = Dropdown from JSON`.
