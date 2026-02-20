@@ -10,6 +10,7 @@ import { Big } from "big.js";
 export interface DataSourceType {
     templateJsonAttr: EditableValue<string>;
     dataJsonAttr?: EditableValue<string>;
+    fieldKeySchemaJsonAttr?: EditableValue<string>;
     basePdfSource?: ListValue;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
@@ -22,6 +23,7 @@ export type ViewModeEnum = "designer" | "viewer";
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
     dataJsonAttr: string;
+    fieldKeySchemaJsonAttr: string;
     basePdfSource: {} | { caption: string } | { type: string } | null;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
@@ -36,7 +38,6 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
     sigWebScriptUrl?: DynamicValue<string>;
@@ -95,7 +96,6 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
-    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl: string;
     pdfJsScriptUrl: string;
     sigWebScriptUrl: string;

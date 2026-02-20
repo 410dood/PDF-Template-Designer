@@ -26,6 +26,14 @@
                         <attributeType name="String" />
                     </attributeTypes>
                 </property>
+                <property key="fieldKeySchemaJsonAttr" type="attribute" required="false">
+                    <caption>Field key schema JSON</caption>
+                    <category>Field keys</category>
+                    <description>Optional String/LongString attribute containing a JSON Schema object for key options when Field key source = Dropdown from JSON.</description>
+                    <attributeTypes>
+                        <attributeType name="String" />
+                    </attributeTypes>
+                </property>
                 <property key="basePdfSource" type="datasource" isList="true" required="false">
                     <caption>Base PDF datasource</caption>
                     <category>Template</category>
@@ -72,12 +80,6 @@
                 <attributeType name="Long" />
                 <attributeType name="AutoNumber" />
             </attributeTypes>
-        </property>
-
-        <property key="fieldKeyOptionsJson" type="string" multiline="true" required="false">
-            <caption>Field key options JSON</caption>
-            <category>Field keys</category>
-            <description>JSON array used for key and property dropdown values. Supports string items or objects with key/value, optional label, optional type, and optional options array for enumeration values. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
         </property>
 
         <property key="pdfJsWorkerUrl" type="textTemplate" required="false">

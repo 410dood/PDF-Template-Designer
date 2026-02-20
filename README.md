@@ -6,7 +6,6 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `pdftemplatedesigner/` widget source (React/TypeScript)
 - `mendix-module/PdfTemplateDesigner/README.md` with domain model, microflows, and page guidance
 - `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java` Java action for template generation
-- `mendix-module/Document/javasource/document/actions/FinalizePdfToFlattened.java` Java action for final flattening
 
 **Widget setup**
 1. Install dependencies: `npm install`
@@ -17,12 +16,12 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `Template definition` (data source): point to your `FormConfiguration` context (previously `PdfTemplateDefinition`) or equivalent object.
 - `Template JSON` (attribute): bind to configuration template JSON (for example `FormConfiguration.TemplateJson`).
 - `Data JSON` (attribute): bind to your per-document instance attribute (for example `ClientDocument.DataJson`) so Viewer edits/signatures persist.
+- `Field key schema JSON` (attribute, optional): bind to a String/LongString attribute containing a JSON Schema object used when `Field key source = Dropdown from JSON`.
 - `Base PDF datasource` (optional): datasource that returns the base PDF `FileDocument` object. The widget uses the first item.
 - If `Base PDF datasource` is empty and the context object is a `System.FileDocument` specialization, the widget uses the context object file as the base PDF.
 - `Field key source` (enumeration): `Manual text input` (default), `Dropdown from datasource`, or `Dropdown from JSON`.
 - `Field key options datasource` (optional): list datasource used when `Field key source = Dropdown from datasource` (drives Key dropdown; built-in computed keys are also appended).
 - `Field key option attribute` (optional): attribute from the datasource object that contains the key string.
-- `Field key options JSON` (optional): JSON array used when `Field key source = Dropdown from JSON` (drives Key dropdown; built-in computed keys are also appended). Supports optional enum options arrays per key (for select/radio option locking).
 - `PDF.js worker URL` (text template, optional): explicit URL for the worker script (Advanced category).
 - `PDF.js script URL` (text template, optional): explicit URL for the PDF.js core script (`pdf.min.js`) (Advanced category).
 - `SigWeb script URL` (text template, optional): URL to `SigWebTablet.js` for external signature-pad capture in Viewer mode.
@@ -38,29 +37,30 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
 - `On save`: optional microflow to commit the updated TemplateJson.
 
-**Field key options JSON examples**
+**Field key schema JSON (JSON Schema) example**
 ```json
-["ClientFullName", "ClientDateOfBirth", "ProgramName"]
+{
+  "type": "object",
+  "properties": {
+    "ClientFullName": { "type": "string", "title": "Client Full Name" },
+    "ClientDateOfBirth": { "type": "string", "format": "date-time", "title": "Date of Birth" },
+    "ProgramIsActive": { "type": "boolean", "title": "Program Is Active" },
+    "EnrollmentStatus": {
+      "type": "string",
+      "title": "Enrollment Status",
+      "enum": ["Active", "Inactive", "Pre-Screen"]
+    },
+    "ClientPhotoBase64": {
+      "type": "string",
+      "title": "Client Photo",
+      "contentEncoding": "base64",
+      "contentMediaType": "image/png"
+    }
+  }
+}
 ```
 
-```json
-[
-  { "key": "ClientFullName", "label": "Client Full Name" },
-  { "key": "ClientDateOfBirth", "label": "Date of Birth" },
-  { "value": "ProgramName", "label": "Program" }
-]
-```
-
-```json
-[
-  { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
-  { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
-  { "key": "ProgramIsActive", "label": "Program Is Active", "type": "Boolean" },
-  { "key": "EnrollmentStatus", "label": "Enrollment Status", "type": "Enumeration", "options": ["Active", "Inactive"] }
-]
-```
-
-When `type` is provided, the key palette and dropdown show it (for example `Client Date Of Birth (DateTime)`).
+The schema property name becomes the key, and `title` is used as the display label.
 Placing/selecting an option also auto-maps widget field type for:
 - `Boolean` -> `checkbox`
 - `Enumeration` -> `select`
@@ -74,21 +74,24 @@ For mapped `date` fields, a default format is also applied:
 - `Time` -> `HH:mm`
 - `DateTime` -> `MM/dd/yyyy HH:mm`
 
-**Fixed key options JSON (copy/paste)**
-Use this when `Field key source = Dropdown from JSON`.
+**Fixed key schema JSON (copy/paste, JSON Schema)**
+Use this in your bound `Field key schema JSON` attribute when `Field key source = Dropdown from JSON`.
 ```json
-[
-  { "key": "EnrollmentURecordId", "label": "Enrollment Record ID", "type": "String" },
-  { "key": "EnrollmentStartDate", "label": "Enrollment Start Date", "type": "DateTime" },
-  { "key": "EnrollmentEndDate", "label": "Enrollment End Date", "type": "DateTime" },
-  { "key": "EnrollmentStatus", "label": "Enrollment Status", "type": "Enumeration" },
-  { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
-  { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
-  { "key": "ProgramName", "label": "Program Name", "type": "String" },
-  { "key": "ProgramCode", "label": "Program Code", "type": "String" },
-  { "key": "EndEnrollmentReasonName", "label": "End Enrollment Reason", "type": "String" },
-  { "key": "CountyName", "label": "County Name", "type": "String" }
-]
+{
+  "type": "object",
+  "properties": {
+    "EnrollmentURecordId": { "type": "integer", "title": "Enrollment Record ID" },
+    "EnrollmentStartDate": { "type": "string", "format": "date-time", "title": "Enrollment Start Date" },
+    "EnrollmentEndDate": { "type": "string", "format": "date-time", "title": "Enrollment End Date" },
+    "EnrollmentStatus": { "type": "string", "title": "Enrollment Status", "enum": ["Active", "Inactive", "Pre-Screen"] },
+    "ClientFullName": { "type": "string", "title": "Client Full Name" },
+    "ClientDateOfBirth": { "type": "string", "format": "date-time", "title": "Client Date Of Birth" },
+    "ProgramName": { "type": "string", "title": "Program Name" },
+    "ProgramCode": { "type": "string", "title": "Program Code" },
+    "EndEnrollmentReasonName": { "type": "string", "title": "End Enrollment Reason" },
+    "CountyName": { "type": "string", "title": "County Name" }
+  }
+}
 ```
 
 **Designer UX (MVP+)**
@@ -124,6 +127,9 @@ Use this when `Field key source = Dropdown from JSON`.
       "labelOrientation": "horizontal",
       "optionsOrientation": "vertical",
       "showLabel": true,
+      "transparentBackground": false,
+      "textColor": "#111827",
+      "backgroundColor": "#ffffff",
       "type": "text|checkbox|date|signature|multiVariableText|select|radio|image",
       "page": 0,
       "x": 100,
@@ -169,6 +175,8 @@ Use this when `Field key source = Dropdown from JSON`.
 - When `View mode = Viewer`, the widget renders the linked document with the same canvas engine and overlays interactive controls for your template fields.
 - `text` and `date` fields are editable inputs, `checkbox` fields are clickable, `signature` fields use a custom mouse/touch canvas, `select` and `radio` render interactive option controls, `image` renders image data, and `multiVariableText` fields render resolved read-only text from `variablesSampleData`.
 - `radio` orientation is configurable per field with `optionsOrientation` (`vertical` or `horizontal`).
+- Field appearance supports `textColor` and `backgroundColor` in the Edit Field panel.
+- `transparentBackground` can be enabled per field so Viewer controls and flattened output do not white-out underlying PDF content.
 - For computed token date/time fields (`__currentDate`, `__currentTime`, `__currentDateTime`) rendered with field type `date`, Viewer mode displays a static text value instead of a native browser date input so date/time text does not get clipped or partially parsed.
 - For `image` fields:
   - If the field is key-bound and `Data JSON` contains a base64 image (`data:image/...`), that value is rendered.
@@ -183,7 +191,6 @@ Use this when `Field key source = Dropdown from JSON`.
 - With `Data JSON` bound, Viewer mode continuously syncs entered values/signatures into that attribute (overlay + `Data JSON` source of truth).
 - Viewer field values are hydrated from `Data JSON` only (missing keys default to empty/unchecked); native PDF form field values are not used as fallback.
 - For final output from Viewer-entered values, pass the stored `Data JSON` into your generation/finalization microflow.
-- `FinalizePdfToFlattened` only flattens values that already exist inside PDF form fields; Viewer overlay values must be applied from `Data JSON` in your flow.
 - When generating `flattened` output from a PDF that already has native form fields, the Java action first flattens existing field appearances to avoid ghost/placeholder overlays.
 - Flatten/render paths now clear field content areas before drawing/finalizing values, which prevents stale light placeholder text when regenerating from previously edited PDFs.
 - See `mendix-module/PdfTemplateDesigner/README.md` section `Runtime workflow (end user, overlay mode)` for the recommended microflow sequence.

@@ -8,6 +8,7 @@ import "./ui/PdfTemplateDesigner.css";
 interface PdfDesignerCoreDataSourceItem {
   templateJsonAttr?: EditableValue<string>;
   dataJsonAttr?: EditableValue<string>;
+  fieldKeySchemaJsonAttr?: EditableValue<string>;
   basePdfSource?: ListValue;
   onChangeAction?: ActionValue;
   onSaveAction?: ActionValue;
@@ -22,7 +23,6 @@ export interface PdfDesignerCoreProps {
   fieldKeySourceMode?: "manual" | "datasource" | "json";
   fieldKeyOptionsSource?: ListValue;
   fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-  fieldKeyOptionsJson?: string;
   pdfJsWorkerUrl?: DynamicValue<string>;
   pdfJsScriptUrl?: DynamicValue<string>;
   sigWebScriptUrl?: DynamicValue<string>;
@@ -90,6 +90,9 @@ interface TemplateField {
   labelOrientation: FieldOrientation;
   optionsOrientation: FieldOrientation;
   showLabel: boolean;
+  transparentBackground: boolean;
+  textColor: string;
+  backgroundColor: string;
   type: FieldType;
   page: number;
   x: number;
@@ -204,6 +207,8 @@ const DATE_FIELD_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "MM/dd/yyyy hh:mm a", label: "MM/dd/yyyy hh:mm a (12h DateTime)" }
 ];
 const DEFAULT_DATE_FIELD_FORMAT = DATE_FIELD_FORMAT_OPTIONS[0].value;
+const DEFAULT_FIELD_TEXT_COLOR = "#111827";
+const DEFAULT_FIELD_BACKGROUND_COLOR = "#ffffff";
 const BUILTIN_COMPUTED_KEY_OPTIONS: KeyOption[] = [
   { value: "__currentDate", label: "__currentDate (alias __today)", dataType: "Date" },
   { value: "__currentTime", label: "__currentTime (alias __nowTime)", dataType: "Time" },
@@ -422,28 +427,6 @@ function resolveFirstDatasourceObjectId(source?: ListValue): string | undefined 
   return toObjectId(source.items[0]);
 }
 
-function normalizeKeyOption(value: unknown): KeyOption | undefined {
-  if (typeof value === "string" || typeof value === "number") {
-    const key = toTrimmedString(value);
-    return key ? { value: key, label: key } : undefined;
-  }
-
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-
-  const record = value as Record<string, unknown>;
-  const key = toTrimmedString(record.key ?? record.value);
-  if (!key) {
-    return undefined;
-  }
-
-  const label = toTrimmedString(record.label) || key;
-  const dataType = toTrimmedString(record.type ?? record.dataType) || undefined;
-  const options = normalizeOptionStrings(record.options ?? record.enumOptions ?? record.enumValues ?? record.values);
-  return { value: key, label, dataType, options: options.length > 0 ? options : undefined };
-}
-
 function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
   if (!dataType) {
     return undefined;
@@ -538,6 +521,42 @@ function defaultOptionsOrientationForFieldType(type: FieldType): FieldOrientatio
   return type === "radio" ? "vertical" : "horizontal";
 }
 
+function supportsTransparentBackground(type: FieldType): boolean {
+  return type === "text" || type === "date" || type === "multiVariableText" || type === "select" || type === "radio";
+}
+
+function normalizeHexColor(value: unknown, fallback: string): string {
+  const fallbackHex = /^#[0-9a-fA-F]{6}$/.test(fallback) ? fallback.toLowerCase() : "#000000";
+  if (typeof value !== "string") {
+    return fallbackHex;
+  }
+  const trimmed = value.trim();
+  const fullHex = /^#[0-9a-fA-F]{6}$/.exec(trimmed);
+  if (fullHex) {
+    return fullHex[0].toLowerCase();
+  }
+  const shortHex = /^#[0-9a-fA-F]{3}$/.exec(trimmed);
+  if (shortHex) {
+    const digits = shortHex[0].slice(1).split("");
+    return `#${digits.map(char => `${char}${char}`).join("")}`.toLowerCase();
+  }
+  return fallbackHex;
+}
+
+function normalizeBackgroundColor(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim().toLowerCase() === "transparent") {
+    return "transparent";
+  }
+  return normalizeHexColor(value, fallback);
+}
+
+function colorPickerValue(color: string, fallback: string): string {
+  if (color === "transparent") {
+    return normalizeHexColor(fallback, fallback);
+  }
+  return normalizeHexColor(color, fallback);
+}
+
 function areStringArraysEqual(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
     return false;
@@ -581,6 +600,123 @@ function withComputedKeyOptions(options: KeyOption[]): KeyOption[] {
   return dedupeKeyOptions([...options, ...BUILTIN_COMPUTED_KEY_OPTIONS]);
 }
 
+function normalizeSchemaPropertyType(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized || undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item !== "string") {
+        continue;
+      }
+      const normalized = item.trim().toLowerCase();
+      if (!normalized || normalized === "null") {
+        continue;
+      }
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function parseOneOfEnumOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const options: string[] = [];
+  for (const item of value) {
+    if (item === null || item === undefined) {
+      continue;
+    }
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+      options.push(String(item));
+      continue;
+    }
+    if (typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (record.const !== undefined && record.const !== null) {
+      options.push(String(record.const));
+      continue;
+    }
+    const enumValues = normalizeOptionStrings(record.enum);
+    if (enumValues.length > 0) {
+      options.push(...enumValues);
+    }
+  }
+  return normalizeOptionStrings(options);
+}
+
+function inferSchemaPropertyDataType(
+  key: string,
+  propertyRecord: Record<string, unknown>,
+  enumOptions: string[]
+): string | undefined {
+  if (enumOptions.length > 0) {
+    return "Enumeration";
+  }
+
+  const schemaType = normalizeSchemaPropertyType(propertyRecord.type);
+  const format = toTrimmedString(propertyRecord.format).toLowerCase();
+  const contentEncoding = toTrimmedString(propertyRecord.contentEncoding).toLowerCase();
+  const contentMediaType = toTrimmedString(propertyRecord.contentMediaType ?? propertyRecord.mediaType).toLowerCase();
+  const keyAndTitle = `${key} ${toTrimmedString(propertyRecord.title)}`.toLowerCase();
+  const hasImageNameHint = /(photo|image|picture|avatar|signature)/.test(keyAndTitle);
+
+  if (contentMediaType.startsWith("image/")) {
+    return "Image";
+  }
+  if (format === "data-url" && contentMediaType.startsWith("image/")) {
+    return "Image";
+  }
+  if (contentEncoding === "base64" && (hasImageNameHint || contentMediaType.startsWith("image/"))) {
+    return "Image";
+  }
+
+  if (schemaType === "boolean") {
+    return "Boolean";
+  }
+  if (schemaType === "integer") {
+    return "Integer";
+  }
+  if (schemaType === "number") {
+    return "Number";
+  }
+  if (schemaType === "string") {
+    if (format === "date-time") {
+      return "DateTime";
+    }
+    if (format === "date") {
+      return "Date";
+    }
+    if (format === "time") {
+      return "Time";
+    }
+    return "String";
+  }
+  return schemaType ? schemaType.charAt(0).toUpperCase() + schemaType.slice(1) : undefined;
+}
+
+function normalizeKeyOptionFromJsonSchemaProperty(key: string, value: unknown): KeyOption | undefined {
+  if (!key || typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const propertyRecord = value as Record<string, unknown>;
+  const enumOptions = normalizeOptionStrings(propertyRecord.enum);
+  const oneOfOptions = parseOneOfEnumOptions(propertyRecord.oneOf);
+  const options = enumOptions.length > 0 ? enumOptions : oneOfOptions;
+  const label = toTrimmedString(propertyRecord.title) || key;
+  const dataType = inferSchemaPropertyDataType(key, propertyRecord, options);
+  return {
+    value: key,
+    label,
+    dataType,
+    options: options.length > 0 ? options : undefined
+  };
+}
+
 function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?: string } {
   if (!text || !text.trim()) {
     return { options: [] };
@@ -588,15 +724,39 @@ function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?
 
   try {
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      return { options: [], error: "Field key options JSON must be an array." };
+    if (Array.isArray(parsed)) {
+      return {
+        options: [],
+        error:
+          "Legacy array format is no longer supported. Provide a JSON Schema object with type='object' and properties."
+      };
+    }
+    if (!parsed || typeof parsed !== "object") {
+      return {
+        options: [],
+        error: "Field key schema JSON must be a JSON Schema object."
+      };
     }
 
+    const schema = parsed as Record<string, unknown>;
+    const schemaType = normalizeSchemaPropertyType(schema.type);
+    if (schemaType && schemaType !== "object") {
+      return { options: [], error: "JSON Schema root type must be 'object'." };
+    }
+
+    if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) {
+      return { options: [], error: "JSON Schema must include an object 'properties' section." };
+    }
+
+    const properties = schema.properties as Record<string, unknown>;
     const options = dedupeKeyOptions(
-      parsed
-        .map(item => normalizeKeyOption(item))
+      Object.entries(properties)
+        .map(([key, property]) => normalizeKeyOptionFromJsonSchemaProperty(key, property))
         .filter((item): item is KeyOption => Boolean(item))
     );
+    if (options.length === 0) {
+      return { options: [], error: "No usable fields were found in JSON Schema properties." };
+    }
     return { options };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid JSON";
@@ -631,6 +791,9 @@ function normalizeField(input: any, index: number): TemplateField {
     ? input.optionsOrientation
     : defaultOptionsOrientationForFieldType(type);
   const showLabel = input?.showLabel !== false;
+  const transparentBackground = supportsTransparentBackground(type) ? Boolean(input?.transparentBackground) : false;
+  const textColor = normalizeHexColor(input?.textColor, DEFAULT_FIELD_TEXT_COLOR);
+  const backgroundColor = normalizeBackgroundColor(input?.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR);
   const page = Math.max(0, Math.floor(toNumber(input?.page, 0)));
   const x = Math.max(0, toNumber(input?.x, 48));
   const y = Math.max(0, toNumber(input?.y, 48));
@@ -651,6 +814,9 @@ function normalizeField(input: any, index: number): TemplateField {
     labelOrientation,
     optionsOrientation,
     showLabel,
+    transparentBackground,
+    textColor,
+    backgroundColor,
     type,
     page,
     x,
@@ -748,6 +914,9 @@ function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefine
       labelOrientation: field.labelOrientation,
       optionsOrientation: field.optionsOrientation,
       showLabel: field.showLabel,
+      transparentBackground: field.transparentBackground,
+      textColor: field.textColor,
+      backgroundColor: field.backgroundColor,
       type: field.type,
       page: field.page,
       x: field.x,
@@ -828,6 +997,9 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
       a.labelOrientation !== b.labelOrientation ||
       a.optionsOrientation !== b.optionsOrientation ||
       a.showLabel !== b.showLabel ||
+      a.transparentBackground !== b.transparentBackground ||
+      a.textColor !== b.textColor ||
+      a.backgroundColor !== b.backgroundColor ||
       a.type !== b.type ||
       a.page !== b.page ||
       a.x !== b.x ||
@@ -1762,7 +1934,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     : "manual";
   const fieldKeyOptionsSource = props.fieldKeyOptionsSource;
   const fieldKeyOptionAttribute = props.fieldKeyOptionAttribute;
-  const fieldKeyOptionsJson = props.fieldKeyOptionsJson || "";
+  const fieldKeySchemaJsonValue = dataSourceItem?.fieldKeySchemaJsonAttr;
 
   const revokeImageObjectUrl = useCallback(() => {
     if (imageObjectUrlRef.current) {
@@ -1898,11 +2070,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     templateJsonValue && templateJsonValue.status === "available" ? templateJsonValue.value || "" : "";
   const dataJsonText =
     dataJsonValue && dataJsonValue.status === "available" ? dataJsonValue.value || "" : "";
+  const fieldKeySchemaJsonText =
+    fieldKeySchemaJsonValue && fieldKeySchemaJsonValue.status === "available" ? fieldKeySchemaJsonValue.value || "" : "";
   const isDataJsonBound = Boolean(dataJsonValue && dataJsonValue.status === "available");
   const showViewerDataJsonBindingWarning = isViewerMode && !isDataJsonBound;
   const jsonKeyOptionsState = useMemo(
-    () => parseFieldKeyOptionsJson(fieldKeyOptionsJson),
-    [fieldKeyOptionsJson]
+    () => parseFieldKeyOptionsJson(fieldKeySchemaJsonText),
+    [fieldKeySchemaJsonText]
   );
   const datasourceKeyOptionsState = useMemo(() => {
     if (!fieldKeyOptionsSource) {
@@ -2474,6 +2648,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "fontSize"
           | "align"
           | "showLabel"
+          | "transparentBackground"
+          | "textColor"
+          | "backgroundColor"
           | "required"
         >
       >
@@ -2506,6 +2683,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             ? overrides.optionsOrientation
             : defaultOptionsOrientationForFieldType(type),
         showLabel: overrides?.showLabel ?? true,
+        transparentBackground:
+          supportsTransparentBackground(type) ? Boolean(overrides?.transparentBackground) : false,
+        textColor: normalizeHexColor(overrides?.textColor, DEFAULT_FIELD_TEXT_COLOR),
+        backgroundColor: normalizeBackgroundColor(overrides?.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
         type,
         page: pageIndex,
         x: snappedX,
@@ -2541,6 +2722,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "fontSize"
           | "align"
           | "showLabel"
+          | "transparentBackground"
+          | "textColor"
+          | "backgroundColor"
           | "required"
         >
       >
@@ -2571,6 +2755,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           | "fontSize"
           | "align"
           | "showLabel"
+          | "transparentBackground"
+          | "textColor"
+          | "backgroundColor"
           | "required"
         >
       >
@@ -2697,6 +2884,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       ? normalizeFieldFormat("date", selectedField.format)
       : DEFAULT_DATE_FIELD_FORMAT;
   const selectedFieldHasCustomDateFormat = !DATE_FIELD_FORMAT_OPTIONS.some(option => option.value === selectedFieldDateFormat);
+  const selectedFieldSupportsTransparentBackground = Boolean(selectedField && supportsTransparentBackground(selectedField.type));
+  const selectedFieldSupportsColorStyling = selectedFieldSupportsTransparentBackground;
+  const selectedFieldTextColorPickerValue = selectedField
+    ? colorPickerValue(selectedField.textColor, DEFAULT_FIELD_TEXT_COLOR)
+    : DEFAULT_FIELD_TEXT_COLOR;
+  const selectedFieldBackgroundColorPickerValue = selectedField
+    ? colorPickerValue(selectedField.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR)
+    : DEFAULT_FIELD_BACKGROUND_COLOR;
   useEffect(() => {
     setOptionDraft("");
     setImageUploadError(null);
@@ -3416,10 +3611,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         return <div className="pdf-template-designer__viewer-multi">{resolved}</div>;
       }
 
+      const resolvedBackgroundColor =
+        field.transparentBackground ? "transparent" : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR);
       const inputStyle = {
         fontSize: Math.max(10, field.fontSize * renderScale * 0.9),
-        textAlign: field.align
-      } as const;
+        textAlign: field.align,
+        color: normalizeHexColor(field.textColor, DEFAULT_FIELD_TEXT_COLOR),
+        backgroundColor: resolvedBackgroundColor
+      } as CSSProperties;
       const rawValue = viewerFieldValues[field.key];
       const value = typeof rawValue === "string" ? rawValue : "";
       const computedFallback =
@@ -3684,7 +3883,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                         left: field.x * renderScale,
                         top: field.y * renderScale,
                         width: field.w * renderScale,
-                        height: field.h * renderScale
+                        height: field.h * renderScale,
+                        backgroundColor:
+                          field.transparentBackground
+                            ? "transparent"
+                            : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
+                        color: normalizeHexColor(field.textColor, DEFAULT_FIELD_TEXT_COLOR)
                       }}
                       onPointerDown={() => {
                         if (field.type === "signature") {
@@ -3957,7 +4161,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                         left: field.x * renderScale,
                         top: field.y * renderScale,
                         width: field.w * renderScale,
-                        height: field.h * renderScale
+                        height: field.h * renderScale,
+                        backgroundColor:
+                          field.transparentBackground
+                            ? "rgba(255, 255, 255, 0.18)"
+                            : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
+                        color: normalizeHexColor(field.textColor, DEFAULT_FIELD_TEXT_COLOR)
                       }}
                       onPointerDown={event => handleFieldPointerDown(event, field, "move")}
                     >
@@ -4086,6 +4295,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                         if (nextType === "date") {
                           nextChanges.format = normalizeFieldFormat("date", selectedField.format);
                         }
+                        if (!supportsTransparentBackground(nextType)) {
+                          nextChanges.transparentBackground = false;
+                        }
                         nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
                         updateField(selectedField.id, nextChanges);
                       }}
@@ -4128,6 +4340,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                           if (nextType === "date") {
                             nextChanges.format = normalizeFieldFormat("date", mappedDateFormat || selectedField.format);
                           }
+                          if (!supportsTransparentBackground(nextType)) {
+                            nextChanges.transparentBackground = false;
+                          }
                           if (mappedType) {
                             nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
                           }
@@ -4167,7 +4382,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 </div>
                 ) : null}
 
-                {(showPropertyShowLabel || showPropertyRequired) ? (
+                {(showPropertyShowLabel || showPropertyRequired || selectedFieldSupportsTransparentBackground) ? (
                 <div className="pdf-template-designer__inspector-checks">
                   {showPropertyShowLabel ? (
                   <label className="pdf-template-designer__toggle">
@@ -4187,6 +4402,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       onChange={event => updateField(selectedField.id, { required: event.target.checked })}
                     />
                     Required
+                  </label>
+                  ) : null}
+                  {selectedFieldSupportsTransparentBackground ? (
+                  <label className="pdf-template-designer__toggle">
+                    <input
+                      type="checkbox"
+                      checked={selectedField.transparentBackground}
+                      onChange={event => updateField(selectedField.id, { transparentBackground: event.target.checked })}
+                    />
+                    Transparent background
                   </label>
                   ) : null}
                 </div>
@@ -4340,6 +4565,71 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     </div>
                   </div>
                   ) : null}
+                </div>
+                ) : null}
+
+                {selectedFieldSupportsColorStyling ? (
+                <div className="pdf-template-designer__inspector-section">
+                  <div className="pdf-template-designer__inspector-grid-two">
+                    <div>
+                      <div className="pdf-template-designer__label">Text Color</div>
+                      <div className="pdf-template-designer__color-row">
+                        <input
+                          className="pdf-template-designer__color-input"
+                          type="color"
+                          value={selectedFieldTextColorPickerValue}
+                          onChange={event => updateField(selectedField.id, { textColor: normalizeHexColor(event.target.value, DEFAULT_FIELD_TEXT_COLOR) })}
+                        />
+                        <input
+                          className="pdf-template-designer__input"
+                          value={selectedField.textColor}
+                          onChange={event => updateField(selectedField.id, { textColor: normalizeHexColor(event.target.value, selectedField.textColor || DEFAULT_FIELD_TEXT_COLOR) })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pdf-template-designer__label">Background Color</div>
+                      <div className="pdf-template-designer__color-row">
+                        <input
+                          className="pdf-template-designer__color-input"
+                          type="color"
+                          value={selectedFieldBackgroundColorPickerValue}
+                          disabled={selectedField.transparentBackground}
+                          onChange={event =>
+                            updateField(selectedField.id, {
+                              transparentBackground: false,
+                              backgroundColor: normalizeHexColor(event.target.value, DEFAULT_FIELD_BACKGROUND_COLOR)
+                            })
+                          }
+                        />
+                        <input
+                          className="pdf-template-designer__input"
+                          value={selectedField.transparentBackground ? "transparent" : selectedField.backgroundColor}
+                          onChange={event => {
+                            const raw = event.target.value.trim();
+                            if (!raw) {
+                              updateField(selectedField.id, {
+                                transparentBackground: true,
+                                backgroundColor: DEFAULT_FIELD_BACKGROUND_COLOR
+                              });
+                              return;
+                            }
+                            if (raw.toLowerCase() === "transparent") {
+                              updateField(selectedField.id, {
+                                transparentBackground: true,
+                                backgroundColor: DEFAULT_FIELD_BACKGROUND_COLOR
+                              });
+                              return;
+                            }
+                            updateField(selectedField.id, {
+                              transparentBackground: false,
+                              backgroundColor: normalizeHexColor(raw, selectedField.backgroundColor || DEFAULT_FIELD_BACKGROUND_COLOR)
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 ) : null}
 

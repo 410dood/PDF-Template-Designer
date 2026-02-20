@@ -304,7 +304,11 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
 
         if ("checkbox".equals(normalizedType)) {
-            clearFieldContentArea(cs, x, y, w, h);
+            if (shouldClearFieldContentArea(field)) {
+                clearFieldContentArea(cs, field, x, y, w, h);
+            }
+            int[] textColor = resolveTextColorRgb(field);
+            cs.setStrokingColor(textColor[0], textColor[1], textColor[2]);
             cs.addRect(x, y, w, h);
             cs.stroke();
             if (isTruthy(getValue(data, field.key))) {
@@ -316,28 +320,33 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             }
             if (field.showLabel && !labelText.isEmpty()) {
                 if (isVerticalLabelOrientation(field)) {
-                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1), textColor);
                 } else {
-                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize));
+                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize), textColor);
                 }
             }
             return;
         }
 
         if ("signature".equals(normalizedType)) {
-            clearFieldContentArea(cs, x, y, w, h);
+            if (shouldClearFieldContentArea(field)) {
+                clearFieldContentArea(cs, field, x, y, w, h);
+            }
+            int[] textColor = resolveTextColorRgb(field);
+            cs.setStrokingColor(textColor[0], textColor[1], textColor[2]);
             cs.addRect(x, y, w, h);
             cs.stroke();
             if (field.showLabel && !labelText.isEmpty()) {
                 if (isVerticalLabelOrientation(field)) {
-                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                    drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1), textColor);
                 } else {
-                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize));
+                    drawLabelText(cs, labelText, x + w + 4, y + Math.max(1, (h - fontSize) / 2f), Math.max(8, fontSize), textColor);
                 }
             }
             boolean hasDrawnSignature = drawSignatureImage(cs, doc, getSignatureValue(data, field.key), x, y, w, h);
             if (!hasDrawnSignature) {
                 cs.beginText();
+                cs.setNonStrokingColor(textColor[0], textColor[1], textColor[2]);
                 cs.setFont(PDType1Font.HELVETICA_OBLIQUE, Math.max(8, fontSize));
                 cs.newLineAtOffset(x + 4, y + h / 2);
                 cs.showText("Signature");
@@ -347,7 +356,9 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         }
 
         if ("image".equals(normalizedType)) {
-            clearFieldContentArea(cs, x, y, w, h);
+            if (shouldClearFieldContentArea(field)) {
+                clearFieldContentArea(cs, field, x, y, w, h);
+            }
             boolean hasDrawnImage = drawSignatureImage(cs, doc, getImageValue(data, field), x, y, w, h);
             if (!hasDrawnImage) {
                 String placeholder = field.showLabel && !labelText.isEmpty() ? labelText : "Image";
@@ -359,17 +370,23 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         String value = getFormattedFieldValue(field, data);
         if (field.showLabel && !labelText.isEmpty()) {
             if (isVerticalLabelOrientation(field)) {
-                drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1));
+                drawLabelText(cs, labelText, x, y + h + 2, Math.max(8, fontSize - 1), resolveTextColorRgb(field));
             } else {
                 value = normalizePdfText(labelText + ": " + value);
             }
         }
 
-        clearFieldContentArea(cs, x, y, w, h);
+        if (shouldClearFieldContentArea(field)) {
+            clearFieldContentArea(cs, field, x, y, w, h);
+        }
         drawBoundedText(cs, value, field, x, y, w, h, fontSize);
     }
 
-    private static void clearFieldContentArea(PDPageContentStream cs, float x, float y, float w, float h) throws Exception {
+    private static boolean shouldClearFieldContentArea(TemplateField field) {
+        return field == null || !field.transparentBackground;
+    }
+
+    private static void clearFieldContentArea(PDPageContentStream cs, TemplateField field, float x, float y, float w, float h) throws Exception {
         float inset = 1f;
         float clearX = x + inset;
         float clearY = y + inset;
@@ -379,7 +396,8 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
             return;
         }
         cs.saveGraphicsState();
-        cs.setNonStrokingColor(255, 255, 255);
+        int[] backgroundColor = resolveBackgroundColorRgb(field);
+        cs.setNonStrokingColor(backgroundColor[0], backgroundColor[1], backgroundColor[2]);
         cs.addRect(clearX, clearY, clearW, clearH);
         cs.fill();
         cs.restoreGraphicsState();
@@ -421,6 +439,8 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         cs.addRect(innerX, innerY, innerW, innerH);
         cs.clip();
         cs.beginText();
+        int[] textColor = resolveTextColorRgb(field);
+        cs.setNonStrokingColor(textColor[0], textColor[1], textColor[2]);
         cs.setFont(PDType1Font.HELVETICA, fontSize);
         cs.newLineAtOffset(innerX, firstBaseline);
 
@@ -447,6 +467,44 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
 
         cs.endText();
         cs.restoreGraphicsState();
+    }
+
+    private static int[] resolveTextColorRgb(TemplateField field) {
+        return parseHexColor(field == null ? null : field.textColor, 0, 0, 0);
+    }
+
+    private static int[] resolveBackgroundColorRgb(TemplateField field) {
+        return parseHexColor(field == null ? null : field.backgroundColor, 255, 255, 255);
+    }
+
+    private static int[] parseHexColor(String rawColor, int fallbackR, int fallbackG, int fallbackB) {
+        String color = rawColor == null ? "" : rawColor.trim();
+        if (color.isEmpty() || "transparent".equalsIgnoreCase(color)) {
+            return new int[] { fallbackR, fallbackG, fallbackB };
+        }
+        if (color.startsWith("#")) {
+            color = color.substring(1);
+        }
+        if (color.length() == 3) {
+            color =
+                String.valueOf(color.charAt(0)) +
+                color.charAt(0) +
+                color.charAt(1) +
+                color.charAt(1) +
+                color.charAt(2) +
+                color.charAt(2);
+        }
+        if (!color.matches("(?i)[0-9a-f]{6}")) {
+            return new int[] { fallbackR, fallbackG, fallbackB };
+        }
+        try {
+            int r = Integer.parseInt(color.substring(0, 2), 16);
+            int g = Integer.parseInt(color.substring(2, 4), 16);
+            int b = Integer.parseInt(color.substring(4, 6), 16);
+            return new int[] { r, g, b };
+        } catch (Exception ignored) {
+            return new int[] { fallbackR, fallbackG, fallbackB };
+        }
     }
 
     private static List<String> wrapTextToWidth(String text, float fontSize, float maxWidth) throws Exception {
@@ -579,11 +637,13 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         return "vertical".equals(field.labelOrientation.trim().toLowerCase(Locale.ROOT));
     }
 
-    private static void drawLabelText(PDPageContentStream cs, String text, float x, float y, float fontSize) throws Exception {
+    private static void drawLabelText(PDPageContentStream cs, String text, float x, float y, float fontSize, int[] colorRgb) throws Exception {
         if (text == null || text.trim().isEmpty()) {
             return;
         }
         cs.beginText();
+        int[] effectiveColor = colorRgb == null ? new int[] { 0, 0, 0 } : colorRgb;
+        cs.setNonStrokingColor(effectiveColor[0], effectiveColor[1], effectiveColor[2]);
         cs.setFont(PDType1Font.HELVETICA, fontSize);
         cs.newLineAtOffset(x, y);
         cs.showText(normalizePdfText(text));
@@ -1444,6 +1504,9 @@ public class GenerateFlattenedPdf extends UserAction<byte[]> {
         public String labelOrientation;
         public String optionsOrientation;
         public boolean showLabel = true;
+        public boolean transparentBackground = false;
+        public String textColor;
+        public String backgroundColor;
         public String type;
         public String format;
         public int page;

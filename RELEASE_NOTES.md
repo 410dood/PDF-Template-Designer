@@ -12,6 +12,20 @@
   - mapped date fields now receive a default format based on source datatype (`MM/dd/yyyy`, `HH:mm`, or `MM/dd/yyyy HH:mm`)
 - Preserved multiline text intent in flattened output by keeping line breaks during bounded text layout.
 
+## 0.1.10 - 2026-02-20
+
+### Highlights
+- Simplified finalization flow to a single action by removing `FinalizePdfToFlattened` from the module/docs.
+- Flattened PDF renderer now honors field appearance styling (`textColor`, `backgroundColor`, and `transparentBackground`) instead of always defaulting to black text on white.
+
+### Technical Changes
+- Removed `mendix-module/Document/javasource/document/actions/FinalizePdfToFlattened.java`.
+- Updated `Document.GenerateFlattenedPdf` rendering path to:
+  - apply configured text color when drawing text and labels
+  - apply configured background color when clearing field content areas
+  - keep transparent fields unfilled when `transparentBackground = true`
+- Updated READMEs to document the single-step `GenerateFlattenedPdf` finalization architecture.
+
 ## 0.1.9 - 2026-02-20
 
 ### Highlights
