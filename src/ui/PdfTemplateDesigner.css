@@ -151,23 +151,6 @@
   position: relative;
 }
 
-.pdf-template-designer__viewer-only {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid var(--pd-border);
-  border-radius: 14px;
-  box-shadow: var(--pd-shadow);
-  padding: 10px;
-  min-height: 560px;
-}
-
-.pdf-template-designer__document-frame {
-  width: 100%;
-  min-height: 540px;
-  border: 0;
-  border-radius: 10px;
-  background: #fff;
-}
-
 .pdf-template-designer__page {
   position: relative;
   margin: 0 auto;
@@ -290,11 +273,6 @@
   color: #fff;
 }
 
-.pdf-template-designer__button--ghost {
-  background: transparent;
-  border-style: dashed;
-}
-
 .pdf-template-designer__palette-tool {
   position: relative;
   display: inline-flex;
@@ -343,10 +321,6 @@
   box-shadow: 0 0 0 2px rgba(31, 142, 106, 0.18);
 }
 
-.pdf-template-designer__palette-tool--decor {
-  opacity: 1;
-}
-
 .pdf-template-designer__palette-tool:disabled {
   cursor: default;
 }
@@ -373,10 +347,6 @@
 .pdf-template-designer__palette-tool:hover::after,
 .pdf-template-designer__palette-tool:focus-visible::after {
   opacity: 1;
-}
-
-.pdf-template-designer__palette .pdf-template-designer__button--ghost {
-  margin-top: 6px;
 }
 
 .pdf-template-designer__button--compact {
@@ -681,11 +651,6 @@
   display: inline-flex;
   gap: 6px;
   z-index: 5;
-}
-
-.pdf-template-designer__form {
-  display: grid;
-  gap: 10px;
 }
 
 .pdf-template-designer__inspector {

@@ -1,7 +1,25 @@
-﻿import { createElement, ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
+﻿import {
+  createElement,
+  ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
+import type {
+  ChangeEvent as ReactChangeEvent,
+  DragEvent as ReactDragEvent,
+  PointerEvent as ReactPointerEvent
+} from "react";
 import type { CSSProperties } from "react";
-import type { ActionValue, DynamicValue, EditableValue, ListAttributeValue, ListValue } from "mendix";
+import type {
+  ActionValue,
+  DynamicValue,
+  EditableValue,
+  ListAttributeValue,
+  ListValue
+} from "mendix";
 import { Big } from "big.js";
 import "./ui/PdfTemplateDesigner.css";
 
@@ -66,7 +84,15 @@ export interface PdfDesignerCoreProps {
   showPaletteToolBarcodeWide?: boolean;
 }
 
-type FieldType = "text" | "checkbox" | "date" | "signature" | "multiVariableText" | "select" | "radio" | "image";
+type FieldType =
+  | "text"
+  | "checkbox"
+  | "date"
+  | "signature"
+  | "multiVariableText"
+  | "select"
+  | "radio"
+  | "image";
 type FieldAlign = "left" | "center" | "right";
 type FieldOrientation = "horizontal" | "vertical";
 type FieldKeySourceMode = "manual" | "datasource" | "json";
@@ -124,7 +150,10 @@ interface PdfjsRenderTask {
 
 interface PdfjsPageProxy {
   getViewport: (options: { scale: number }) => PdfjsViewport;
-  render: (options: { canvasContext: CanvasRenderingContext2D; viewport: PdfjsViewport }) => PdfjsRenderTask;
+  render: (options: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: PdfjsViewport;
+  }) => PdfjsRenderTask;
 }
 
 interface PdfjsDocumentProxy {
@@ -134,7 +163,9 @@ interface PdfjsDocumentProxy {
 }
 
 interface PdfjsApi {
-  getDocument: (options: { data: ArrayBuffer }) => { promise: Promise<PdfjsDocumentProxy> };
+  getDocument: (options: { data: ArrayBuffer }) => {
+    promise: Promise<PdfjsDocumentProxy>;
+  };
   GlobalWorkerOptions: { workerSrc: string };
 }
 
@@ -186,11 +217,18 @@ const PDFJS_AMD_MODULE_IDS = [
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
 const PALETTE_TYPE_DRAG_TYPE = "application/x-pdf-field-type";
-const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = ["GetSigImageB64", "GetSigImageBase64", "GetSigImage"];
+const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = [
+  "GetSigImageB64",
+  "GetSigImageBase64",
+  "GetSigImage"
+];
 let pdfjsLoader: Promise<PdfjsApi> | null = null;
 let fieldIdCounter = 0;
 
-const FIELD_DEFAULTS: Record<FieldType, Pick<TemplateField, "w" | "h" | "fontSize" | "align">> = {
+const FIELD_DEFAULTS: Record<
+  FieldType,
+  Pick<TemplateField, "w" | "h" | "fontSize" | "align">
+> = {
   text: { w: 180, h: 22, fontSize: 10, align: "left" },
   checkbox: { w: 16, h: 16, fontSize: 10, align: "center" },
   date: { w: 120, h: 20, fontSize: 10, align: "left" },
@@ -210,10 +248,26 @@ const DEFAULT_DATE_FIELD_FORMAT = DATE_FIELD_FORMAT_OPTIONS[0].value;
 const DEFAULT_FIELD_TEXT_COLOR = "#111827";
 const DEFAULT_FIELD_BACKGROUND_COLOR = "#ffffff";
 const BUILTIN_COMPUTED_KEY_OPTIONS: KeyOption[] = [
-  { value: "__currentDate", label: "__currentDate (alias __today)", dataType: "Date" },
-  { value: "__currentTime", label: "__currentTime (alias __nowTime)", dataType: "Time" },
-  { value: "__currentDateTime", label: "__currentDateTime (alias __now)", dataType: "DateTime" },
-  { value: "__signature", label: "__signature (signature placeholder)", dataType: "Signature" }
+  {
+    value: "__currentDate",
+    label: "__currentDate (alias __today)",
+    dataType: "Date"
+  },
+  {
+    value: "__currentTime",
+    label: "__currentTime (alias __nowTime)",
+    dataType: "Time"
+  },
+  {
+    value: "__currentDateTime",
+    label: "__currentDateTime (alias __now)",
+    dataType: "DateTime"
+  },
+  {
+    value: "__signature",
+    label: "__signature (signature placeholder)",
+    dataType: "Signature"
+  }
 ];
 const TOOL_RAIL_ITEMS: Array<{
   id: string;
@@ -229,7 +283,14 @@ const TOOL_RAIL_ITEMS: Array<{
   align?: FieldAlign;
   showLabel?: boolean;
 }> = [
-  { id: "text", type: "text", glyph: "T", tooltip: "Text field", label: "Text field", keyBase: "text" },
+  {
+    id: "text",
+    type: "text",
+    glyph: "T",
+    tooltip: "Text field",
+    label: "Text field",
+    keyBase: "text"
+  },
   {
     id: "multiVariableText",
     type: "multiVariableText",
@@ -241,16 +302,109 @@ const TOOL_RAIL_ITEMS: Array<{
     w: 220,
     h: 28
   },
-  { id: "signature", type: "signature", glyph: "SIG", tooltip: "Signature field", label: "Signature field", keyBase: "signature" },
-  { id: "table", type: "text", glyph: "TB", tooltip: "Table", label: "Table", keyBase: "table", seedLabel: "Table", w: 220, h: 28 },
-  { id: "line", type: "text", glyph: "LN", tooltip: "Line", label: "Line", keyBase: "line", seedLabel: "Line", w: 180, h: 12 },
-  { id: "box", type: "text", glyph: "BOX", tooltip: "Rectangle", label: "Rectangle", keyBase: "box", seedLabel: "Rectangle", w: 140, h: 80 },
-  { id: "circle", type: "text", glyph: "O", tooltip: "Circle", label: "Circle", keyBase: "circle", seedLabel: "Circle", w: 64, h: 64, align: "center" },
-  { id: "image", type: "image", glyph: "IMG", tooltip: "Image", label: "Image", keyBase: "image", seedLabel: "Image", w: 140, h: 90 },
-  { id: "link", type: "text", glyph: "LNK", tooltip: "Link", label: "Link", keyBase: "link", seedLabel: "Link", w: 180, h: 22 },
-  { id: "signaturePad", type: "signature", glyph: "SG", tooltip: "Signature pad", label: "Signature pad", keyBase: "signaturePad" },
-  { id: "qr", type: "text", glyph: "QR", tooltip: "QR code", label: "QR code", keyBase: "qr", seedLabel: "QR Code", w: 86, h: 86, align: "center" },
-  { id: "date", type: "date", glyph: "CAL", tooltip: "Date field", label: "Date field", keyBase: "date" },
+  {
+    id: "signature",
+    type: "signature",
+    glyph: "SIG",
+    tooltip: "Signature field",
+    label: "Signature field",
+    keyBase: "signature"
+  },
+  {
+    id: "table",
+    type: "text",
+    glyph: "TB",
+    tooltip: "Table",
+    label: "Table",
+    keyBase: "table",
+    seedLabel: "Table",
+    w: 220,
+    h: 28
+  },
+  {
+    id: "line",
+    type: "text",
+    glyph: "LN",
+    tooltip: "Line",
+    label: "Line",
+    keyBase: "line",
+    seedLabel: "Line",
+    w: 180,
+    h: 12
+  },
+  {
+    id: "box",
+    type: "text",
+    glyph: "BOX",
+    tooltip: "Rectangle",
+    label: "Rectangle",
+    keyBase: "box",
+    seedLabel: "Rectangle",
+    w: 140,
+    h: 80
+  },
+  {
+    id: "circle",
+    type: "text",
+    glyph: "O",
+    tooltip: "Circle",
+    label: "Circle",
+    keyBase: "circle",
+    seedLabel: "Circle",
+    w: 64,
+    h: 64,
+    align: "center"
+  },
+  {
+    id: "image",
+    type: "image",
+    glyph: "IMG",
+    tooltip: "Image",
+    label: "Image",
+    keyBase: "image",
+    seedLabel: "Image",
+    w: 140,
+    h: 90
+  },
+  {
+    id: "link",
+    type: "text",
+    glyph: "LNK",
+    tooltip: "Link",
+    label: "Link",
+    keyBase: "link",
+    seedLabel: "Link",
+    w: 180,
+    h: 22
+  },
+  {
+    id: "signaturePad",
+    type: "signature",
+    glyph: "SG",
+    tooltip: "Signature pad",
+    label: "Signature pad",
+    keyBase: "signaturePad"
+  },
+  {
+    id: "qr",
+    type: "text",
+    glyph: "QR",
+    tooltip: "QR code",
+    label: "QR code",
+    keyBase: "qr",
+    seedLabel: "QR Code",
+    w: 86,
+    h: 86,
+    align: "center"
+  },
+  {
+    id: "date",
+    type: "date",
+    glyph: "CAL",
+    tooltip: "Date field",
+    label: "Date field",
+    keyBase: "date"
+  },
   {
     id: "time",
     type: "date",
@@ -263,11 +417,60 @@ const TOOL_RAIL_ITEMS: Array<{
     w: 120,
     h: 20
   },
-  { id: "select", type: "select", glyph: "SEL", tooltip: "Select", label: "Select", keyBase: "select", seedLabel: "Select", w: 140, h: 24 },
-  { id: "checkbox", type: "checkbox", glyph: "CHK", tooltip: "Checkbox", label: "Checkbox", keyBase: "checkbox" },
-  { id: "radio", type: "radio", glyph: "RAD", tooltip: "Radio", label: "Radio", keyBase: "radio", seedLabel: "Radio", w: 160, h: 36 },
-  { id: "barSmall", type: "text", glyph: "BAR", tooltip: "Barcode", label: "Barcode", keyBase: "barcode", seedLabel: "Barcode", w: 160, h: 24, align: "center" },
-  { id: "barWide", type: "text", glyph: "BAR2", tooltip: "Wide barcode", label: "Wide barcode", keyBase: "barcodeWide", seedLabel: "Wide Barcode", w: 220, h: 24, align: "center" }
+  {
+    id: "select",
+    type: "select",
+    glyph: "SEL",
+    tooltip: "Select",
+    label: "Select",
+    keyBase: "select",
+    seedLabel: "Select",
+    w: 140,
+    h: 24
+  },
+  {
+    id: "checkbox",
+    type: "checkbox",
+    glyph: "CHK",
+    tooltip: "Checkbox",
+    label: "Checkbox",
+    keyBase: "checkbox"
+  },
+  {
+    id: "radio",
+    type: "radio",
+    glyph: "RAD",
+    tooltip: "Radio",
+    label: "Radio",
+    keyBase: "radio",
+    seedLabel: "Radio",
+    w: 160,
+    h: 36
+  },
+  {
+    id: "barSmall",
+    type: "text",
+    glyph: "BAR",
+    tooltip: "Barcode",
+    label: "Barcode",
+    keyBase: "barcode",
+    seedLabel: "Barcode",
+    w: 160,
+    h: 24,
+    align: "center"
+  },
+  {
+    id: "barWide",
+    type: "text",
+    glyph: "BAR2",
+    tooltip: "Wide barcode",
+    label: "Wide barcode",
+    keyBase: "barcodeWide",
+    seedLabel: "Wide Barcode",
+    w: 220,
+    h: 24,
+    align: "center"
+  }
 ];
 const TOOL_VISIBILITY_PROP_BY_ID: Record<string, keyof PdfDesignerCoreProps> = {
   text: "showPaletteToolText",
@@ -321,7 +524,11 @@ function normalizeFieldTypeInput(value: unknown): FieldType | undefined {
     return undefined;
   }
   const normalized = value.trim().toLowerCase();
-  if (normalized === "multivariabletext" || normalized === "multi_variable_text" || normalized === "multi-variable-text") {
+  if (
+    normalized === "multivariabletext" ||
+    normalized === "multi_variable_text" ||
+    normalized === "multi-variable-text"
+  ) {
     return "multiVariableText";
   }
   if (
@@ -362,7 +569,9 @@ function isViewMode(value: unknown): value is ViewMode {
   return value === "designer" || value === "viewer";
 }
 
-function normalizeStatus(value: unknown): "available" | "loading" | "unavailable" {
+function normalizeStatus(
+  value: unknown
+): "available" | "loading" | "unavailable" {
   const text = typeof value === "string" ? value.toLowerCase() : "";
   if (text === "available") {
     return "available";
@@ -401,7 +610,9 @@ function toObjectId(value: unknown): string | undefined {
   return undefined;
 }
 
-function resolveContextObjectId(item: PdfDesignerCoreDataSourceItem | undefined): string | undefined {
+function resolveContextObjectId(
+  item: PdfDesignerCoreDataSourceItem | undefined
+): string | undefined {
   if (!item) {
     return undefined;
   }
@@ -410,7 +621,12 @@ function resolveContextObjectId(item: PdfDesignerCoreDataSourceItem | undefined)
   if (directId) {
     return directId;
   }
-  const nestedCandidates = [record.value, record.object, record.obj, record._object];
+  const nestedCandidates = [
+    record.value,
+    record.object,
+    record.obj,
+    record._object
+  ];
   for (const candidate of nestedCandidates) {
     const nestedId = toObjectId(candidate);
     if (nestedId) {
@@ -420,8 +636,15 @@ function resolveContextObjectId(item: PdfDesignerCoreDataSourceItem | undefined)
   return undefined;
 }
 
-function resolveFirstDatasourceObjectId(source?: ListValue): string | undefined {
-  if (!source || normalizeStatus((source as any).status) !== "available" || !source.items || source.items.length === 0) {
+function resolveFirstDatasourceObjectId(
+  source?: ListValue
+): string | undefined {
+  if (
+    !source ||
+    normalizeStatus((source as any).status) !== "available" ||
+    !source.items ||
+    source.items.length === 0
+  ) {
     return undefined;
   }
   return toObjectId(source.items[0]);
@@ -439,7 +662,11 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
   if (normalized.includes("signature")) {
     return "signature";
   }
-  if (normalized.includes("image") || normalized.includes("photo") || normalized.includes("picture")) {
+  if (
+    normalized.includes("image") ||
+    normalized.includes("photo") ||
+    normalized.includes("picture")
+  ) {
     return "image";
   }
   if (normalized.includes("multivariable")) {
@@ -451,7 +678,11 @@ function mapDataTypeToFieldType(dataType?: string): FieldType | undefined {
   if (normalized.includes("enum")) {
     return "select";
   }
-  if (normalized.includes("datetime") || normalized.includes("timestamp") || normalized.includes("time")) {
+  if (
+    normalized.includes("datetime") ||
+    normalized.includes("timestamp") ||
+    normalized.includes("time")
+  ) {
     return "date";
   }
   if (normalized.includes("date")) {
@@ -491,7 +722,11 @@ function normalizeOptionStrings(value: unknown): string[] {
       continue;
     }
     let text = "";
-    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+    if (
+      typeof item === "string" ||
+      typeof item === "number" ||
+      typeof item === "boolean"
+    ) {
       text = String(item).trim();
     } else if (typeof item === "object") {
       const record = item as Record<string, unknown>;
@@ -513,20 +748,32 @@ function defaultOptionsForFieldType(type: FieldType): string[] {
   return [];
 }
 
-function defaultLabelOrientationForFieldType(_type: FieldType): FieldOrientation {
+function defaultLabelOrientationForFieldType(
+  _type: FieldType
+): FieldOrientation {
   return "horizontal";
 }
 
-function defaultOptionsOrientationForFieldType(type: FieldType): FieldOrientation {
+function defaultOptionsOrientationForFieldType(
+  type: FieldType
+): FieldOrientation {
   return type === "radio" ? "vertical" : "horizontal";
 }
 
 function supportsTransparentBackground(type: FieldType): boolean {
-  return type === "text" || type === "date" || type === "multiVariableText" || type === "select" || type === "radio";
+  return (
+    type === "text" ||
+    type === "date" ||
+    type === "multiVariableText" ||
+    type === "select" ||
+    type === "radio"
+  );
 }
 
 function normalizeHexColor(value: unknown, fallback: string): string {
-  const fallbackHex = /^#[0-9a-fA-F]{6}$/.test(fallback) ? fallback.toLowerCase() : "#000000";
+  const fallbackHex = /^#[0-9a-fA-F]{6}$/.test(fallback)
+    ? fallback.toLowerCase()
+    : "#000000";
   if (typeof value !== "string") {
     return fallbackHex;
   }
@@ -538,13 +785,16 @@ function normalizeHexColor(value: unknown, fallback: string): string {
   const shortHex = /^#[0-9a-fA-F]{3}$/.exec(trimmed);
   if (shortHex) {
     const digits = shortHex[0].slice(1).split("");
-    return `#${digits.map(char => `${char}${char}`).join("")}`.toLowerCase();
+    return `#${digits.map((char) => `${char}${char}`).join("")}`.toLowerCase();
   }
   return fallbackHex;
 }
 
 function normalizeBackgroundColor(value: unknown, fallback: string): string {
-  if (typeof value === "string" && value.trim().toLowerCase() === "transparent") {
+  if (
+    typeof value === "string" &&
+    value.trim().toLowerCase() === "transparent"
+  ) {
     return "transparent";
   }
   return normalizeHexColor(value, fallback);
@@ -580,7 +830,10 @@ function isEnumerationKeyOption(option?: KeyOption): boolean {
   if (!option) {
     return false;
   }
-  return isEnumerationDataType(option.dataType) || Boolean(option.options && option.options.length > 0);
+  return (
+    isEnumerationDataType(option.dataType) ||
+    Boolean(option.options && option.options.length > 0)
+  );
 }
 
 function dedupeKeyOptions(options: KeyOption[]): KeyOption[] {
@@ -629,7 +882,11 @@ function parseOneOfEnumOptions(value: unknown): string[] {
     if (item === null || item === undefined) {
       continue;
     }
-    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+    if (
+      typeof item === "string" ||
+      typeof item === "number" ||
+      typeof item === "boolean"
+    ) {
       options.push(String(item));
       continue;
     }
@@ -660,10 +917,18 @@ function inferSchemaPropertyDataType(
 
   const schemaType = normalizeSchemaPropertyType(propertyRecord.type);
   const format = toTrimmedString(propertyRecord.format).toLowerCase();
-  const contentEncoding = toTrimmedString(propertyRecord.contentEncoding).toLowerCase();
-  const contentMediaType = toTrimmedString(propertyRecord.contentMediaType ?? propertyRecord.mediaType).toLowerCase();
-  const keyAndTitle = `${key} ${toTrimmedString(propertyRecord.title)}`.toLowerCase();
-  const hasImageNameHint = /(photo|image|picture|avatar|signature)/.test(keyAndTitle);
+  const contentEncoding = toTrimmedString(
+    propertyRecord.contentEncoding
+  ).toLowerCase();
+  const contentMediaType = toTrimmedString(
+    propertyRecord.contentMediaType ?? propertyRecord.mediaType
+  ).toLowerCase();
+  const keyAndTitle = `${key} ${toTrimmedString(
+    propertyRecord.title
+  )}`.toLowerCase();
+  const hasImageNameHint = /(photo|image|picture|avatar|signature)/.test(
+    keyAndTitle
+  );
 
   if (contentMediaType.startsWith("image/")) {
     return "Image";
@@ -671,7 +936,10 @@ function inferSchemaPropertyDataType(
   if (format === "data-url" && contentMediaType.startsWith("image/")) {
     return "Image";
   }
-  if (contentEncoding === "base64" && (hasImageNameHint || contentMediaType.startsWith("image/"))) {
+  if (
+    contentEncoding === "base64" &&
+    (hasImageNameHint || contentMediaType.startsWith("image/"))
+  ) {
     return "Image";
   }
 
@@ -696,11 +964,21 @@ function inferSchemaPropertyDataType(
     }
     return "String";
   }
-  return schemaType ? schemaType.charAt(0).toUpperCase() + schemaType.slice(1) : undefined;
+  return schemaType
+    ? schemaType.charAt(0).toUpperCase() + schemaType.slice(1)
+    : undefined;
 }
 
-function normalizeKeyOptionFromJsonSchemaProperty(key: string, value: unknown): KeyOption | undefined {
-  if (!key || typeof value !== "object" || value === null || Array.isArray(value)) {
+function normalizeKeyOptionFromJsonSchemaProperty(
+  key: string,
+  value: unknown
+): KeyOption | undefined {
+  if (
+    !key ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
     return undefined;
   }
   const propertyRecord = value as Record<string, unknown>;
@@ -717,7 +995,10 @@ function normalizeKeyOptionFromJsonSchemaProperty(key: string, value: unknown): 
   };
 }
 
-function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?: string } {
+function parseFieldKeyOptionsJson(text?: string): {
+  options: KeyOption[];
+  error?: string;
+} {
   if (!text || !text.trim()) {
     return { options: [] };
   }
@@ -744,18 +1025,30 @@ function parseFieldKeyOptionsJson(text?: string): { options: KeyOption[]; error?
       return { options: [], error: "JSON Schema root type must be 'object'." };
     }
 
-    if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) {
-      return { options: [], error: "JSON Schema must include an object 'properties' section." };
+    if (
+      !schema.properties ||
+      typeof schema.properties !== "object" ||
+      Array.isArray(schema.properties)
+    ) {
+      return {
+        options: [],
+        error: "JSON Schema must include an object 'properties' section."
+      };
     }
 
     const properties = schema.properties as Record<string, unknown>;
     const options = dedupeKeyOptions(
       Object.entries(properties)
-        .map(([key, property]) => normalizeKeyOptionFromJsonSchemaProperty(key, property))
+        .map(([key, property]) =>
+          normalizeKeyOptionFromJsonSchemaProperty(key, property)
+        )
         .filter((item): item is KeyOption => Boolean(item))
     );
     if (options.length === 0) {
-      return { options: [], error: "No usable fields were found in JSON Schema properties." };
+      return {
+        options: [],
+        error: "No usable fields were found in JSON Schema properties."
+      };
     }
     return { options };
   } catch (error) {
@@ -768,22 +1061,27 @@ function normalizeField(input: any, index: number): TemplateField {
   const type: FieldType = normalizeFieldTypeInput(input?.type) || "text";
   const defaults = FIELD_DEFAULTS[type];
   const id = createFieldId();
-  const key = typeof input?.key === "string" && input.key.trim().length > 0 ? input.key.trim() : `field_${index + 1}`;
+  const key =
+    typeof input?.key === "string" && input.key.trim().length > 0
+      ? input.key.trim()
+      : `field_${index + 1}`;
   const label = typeof input?.label === "string" ? input.label : "";
   const variablesSampleData =
     typeof input?.variablesSampleData === "string"
       ? input.variablesSampleData
       : typeof input?.variableSampleData === "string"
-        ? input.variableSampleData
-        : "";
+      ? input.variableSampleData
+      : "";
   const format = normalizeFieldFormat(type, input?.format);
-  const options = normalizeOptionStrings(input?.options ?? input?.enumOptions ?? input?.values);
+  const options = normalizeOptionStrings(
+    input?.options ?? input?.enumOptions ?? input?.values
+  );
   const imageDataUrl =
     typeof input?.imageDataUrl === "string"
       ? input.imageDataUrl
       : typeof input?.imageData === "string"
-        ? input.imageData
-        : "";
+      ? input.imageData
+      : "";
   const labelOrientation = isFieldOrientation(input?.labelOrientation)
     ? input.labelOrientation
     : defaultLabelOrientationForFieldType(type);
@@ -791,9 +1089,17 @@ function normalizeField(input: any, index: number): TemplateField {
     ? input.optionsOrientation
     : defaultOptionsOrientationForFieldType(type);
   const showLabel = input?.showLabel !== false;
-  const transparentBackground = supportsTransparentBackground(type) ? Boolean(input?.transparentBackground) : false;
-  const textColor = normalizeHexColor(input?.textColor, DEFAULT_FIELD_TEXT_COLOR);
-  const backgroundColor = normalizeBackgroundColor(input?.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR);
+  const transparentBackground = supportsTransparentBackground(type)
+    ? Boolean(input?.transparentBackground)
+    : false;
+  const textColor = normalizeHexColor(
+    input?.textColor,
+    DEFAULT_FIELD_TEXT_COLOR
+  );
+  const backgroundColor = normalizeBackgroundColor(
+    input?.backgroundColor,
+    DEFAULT_FIELD_BACKGROUND_COLOR
+  );
   const page = Math.max(0, Math.floor(toNumber(input?.page, 0)));
   const x = Math.max(0, toNumber(input?.x, 48));
   const y = Math.max(0, toNumber(input?.y, 48));
@@ -829,7 +1135,10 @@ function normalizeField(input: any, index: number): TemplateField {
   };
 }
 
-function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: string } {
+function parseTemplateJson(text?: string): {
+  fields: TemplateField[];
+  error?: string;
+} {
   if (!text || !text.trim()) {
     return { fields: [] };
   }
@@ -837,7 +1146,9 @@ function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: st
   try {
     const parsed = JSON.parse(text);
     const fields = Array.isArray(parsed?.fields)
-      ? parsed.fields.map((field: any, index: number) => normalizeField(field, index))
+      ? parsed.fields.map((field: any, index: number) =>
+          normalizeField(field, index)
+        )
       : [];
     return { fields };
   } catch (error) {
@@ -846,7 +1157,10 @@ function parseTemplateJson(text?: string): { fields: TemplateField[]; error?: st
   }
 }
 
-function parseDataJson(text?: string): { values: Record<string, unknown>; error?: string } {
+function parseDataJson(text?: string): {
+  values: Record<string, unknown>;
+  error?: string;
+} {
   if (!text || !text.trim()) {
     return { values: {} };
   }
@@ -901,10 +1215,13 @@ function buildDataJson(
   return JSON.stringify(payload, null, 2);
 }
 
-function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefined): string {
+function buildTemplateJson(
+  fields: TemplateField[],
+  basePdfId: string | undefined
+): string {
   const payload: TemplateDefinition = {
     basePdf: basePdfId ? { fileId: basePdfId } : undefined,
-    fields: fields.map(field => ({
+    fields: fields.map((field) => ({
       key: field.key,
       label: field.label,
       variablesSampleData: field.variablesSampleData,
@@ -927,12 +1244,15 @@ function buildTemplateJson(fields: TemplateField[], basePdfId: string | undefine
       align: field.align,
       required: field.required
     })),
-    meta: { units: "pt", createdWith: "pdftemplatedesigner", outputMode: "flattened" }
+    meta: {
+      units: "pt",
+      createdWith: "pdftemplatedesigner",
+      outputMode: "flattened"
+    }
   };
 
   return JSON.stringify(payload, null, 2);
 }
-
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -947,10 +1267,15 @@ function snapValue(value: number, enabled: boolean): number {
 }
 
 function nextFieldKey(type: FieldType, fields: TemplateField[]): string {
-  const base = type === "checkbox" ? "check" : type === "multiVariableText" ? "multiVariableText" : type;
+  const base =
+    type === "checkbox"
+      ? "check"
+      : type === "multiVariableText"
+      ? "multiVariableText"
+      : type;
   let index = 1;
   let candidate = `${base}_${index}`;
-  const keys = new Set(fields.map(field => field.key));
+  const keys = new Set(fields.map((field) => field.key));
   while (keys.has(candidate)) {
     index += 1;
     candidate = `${base}_${index}`;
@@ -967,7 +1292,7 @@ function nextPrefixedFieldKey(prefix: string, fields: TemplateField[]): string {
       .replace(/^_+|_+$/g, "") || "field";
   let index = 1;
   let candidate = `${normalizedBase}_${index}`;
-  const keys = new Set(fields.map(field => field.key));
+  const keys = new Set(fields.map((field) => field.key));
   while (keys.has(candidate)) {
     index += 1;
     candidate = `${normalizedBase}_${index}`;
@@ -976,10 +1301,13 @@ function nextPrefixedFieldKey(prefix: string, fields: TemplateField[]): string {
 }
 
 function cloneFields(fields: TemplateField[]): TemplateField[] {
-  return fields.map(field => ({ ...field, options: [...field.options] }));
+  return fields.map((field) => ({ ...field, options: [...field.options] }));
 }
 
-function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean {
+function areFieldsEqual(
+  left: TemplateField[],
+  right: TemplateField[]
+): boolean {
   if (left.length !== right.length) {
     return false;
   }
@@ -1012,7 +1340,11 @@ function areFieldsEqual(left: TemplateField[], right: TemplateField[]): boolean 
     ) {
       return false;
     }
-    for (let optionIndex = 0; optionIndex < a.options.length; optionIndex += 1) {
+    for (
+      let optionIndex = 0;
+      optionIndex < a.options.length;
+      optionIndex += 1
+    ) {
       if (a.options[optionIndex] !== b.options[optionIndex]) {
         return false;
       }
@@ -1029,7 +1361,12 @@ function isEditableTarget(target: EventTarget | null): boolean {
     return true;
   }
   const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select" || tagName === "button";
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    tagName === "button"
+  );
 }
 
 function fieldVerticalLines(field: TemplateField): number[] {
@@ -1040,7 +1377,11 @@ function fieldHorizontalLines(field: TemplateField): number[] {
   return [field.y, field.y + field.h / 2, field.y + field.h];
 }
 
-function findClosestReference(line: number, refs: number[], tolerance: number): number | undefined {
+function findClosestReference(
+  line: number,
+  refs: number[],
+  tolerance: number
+): number | undefined {
   let bestRef: number | undefined;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const ref of refs) {
@@ -1053,7 +1394,12 @@ function findClosestReference(line: number, refs: number[], tolerance: number): 
   return bestRef;
 }
 
-function snapPositionToReferences(position: number, size: number, refs: number[], tolerance: number): { position: number; guide?: number } {
+function snapPositionToReferences(
+  position: number,
+  size: number,
+  refs: number[],
+  tolerance: number
+): { position: number; guide?: number } {
   const offsets = [0, size / 2, size];
   let bestDelta = Number.POSITIVE_INFINITY;
   let guide: number | undefined;
@@ -1093,7 +1439,10 @@ function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
   }
 
   pdfjsLoader = new Promise((resolve, reject) => {
-    const resolvedScriptSrc = scriptSrc || resolveWorkerUrlValue((window as any).pdfjsScriptSrc) || PDFJS_CDN;
+    const resolvedScriptSrc =
+      scriptSrc ||
+      resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
+      PDFJS_CDN;
     const rejectWithReset = (message: string) => {
       pdfjsLoader = null;
       reject(new Error(message));
@@ -1110,7 +1459,7 @@ function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
       if (!lib) {
         // In AMD environments (e.g. Mendix runtime), pdf.min.js can define
         // "pdfjs-dist/build/pdf" without setting window.pdfjsLib immediately.
-        resolvePdfjsFromAmd().then(amdLib => {
+        resolvePdfjsFromAmd().then((amdLib) => {
           const resolved = (window as any).pdfjsLib || amdLib;
           if (!resolved) {
             rejectWithReset("PDF.js failed to initialize.");
@@ -1125,7 +1474,8 @@ function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
       }
       resolve(lib);
     };
-    script.onerror = () => rejectWithReset(`Failed to load PDF.js from ${resolvedScriptSrc}.`);
+    script.onerror = () =>
+      rejectWithReset(`Failed to load PDF.js from ${resolvedScriptSrc}.`);
     document.head.appendChild(script);
   });
 
@@ -1153,7 +1503,7 @@ function resolvePdfjsFromAmd(): Promise<PdfjsApi | undefined> {
     return Promise.resolve(undefined);
   }
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let settled = false;
     const finish = (value?: PdfjsApi) => {
       if (settled) {
@@ -1175,7 +1525,9 @@ function resolvePdfjsFromAmd(): Promise<PdfjsApi | undefined> {
         req(
           [moduleIds[index]],
           (module: unknown) => {
-            const amdLib = ((module as any)?.default || module) as PdfjsApi | undefined;
+            const amdLib = ((module as any)?.default || module) as
+              | PdfjsApi
+              | undefined;
             const version = (amdLib as any)?.version;
             if (typeof version === "string" && version !== PDFJS_VERSION) {
               console.warn(
@@ -1203,7 +1555,10 @@ function deriveScriptUrlFromWorkerUrl(workerUrl?: string): string | undefined {
   if (!workerUrl) {
     return undefined;
   }
-  const derived = workerUrl.replace(/pdf\.worker(\.min)?\.(m?js)(?=([?#]|$))/i, "pdf$1.$2");
+  const derived = workerUrl.replace(
+    /pdf\.worker(\.min)?\.(m?js)(?=([?#]|$))/i,
+    "pdf$1.$2"
+  );
   return derived !== workerUrl ? derived : undefined;
 }
 
@@ -1211,7 +1566,10 @@ function deriveWorkerUrlFromScriptUrl(scriptUrl?: string): string | undefined {
   if (!scriptUrl) {
     return undefined;
   }
-  const derived = scriptUrl.replace(/pdf(\.min)?\.(m?js)(?=([?#]|$))/i, "pdf.worker$1.$2");
+  const derived = scriptUrl.replace(
+    /pdf(\.min)?\.(m?js)(?=([?#]|$))/i,
+    "pdf.worker$1.$2"
+  );
   return derived !== scriptUrl ? derived : undefined;
 }
 
@@ -1220,7 +1578,9 @@ function loadExternalScript(scriptSrc: string): Promise<void> {
     return Promise.reject(new Error("Document is not available."));
   }
 
-  const existing = document.querySelector(`script[src="${scriptSrc}"]`) as HTMLScriptElement | null;
+  const existing = document.querySelector(
+    `script[src="${scriptSrc}"]`
+  ) as HTMLScriptElement | null;
   if (existing) {
     if ((existing as any).dataset?.loaded === "true") {
       return Promise.resolve();
@@ -1250,14 +1610,17 @@ function loadExternalScript(scriptSrc: string): Promise<void> {
       script.dataset.loaded = "true";
       resolve();
     };
-    script.onerror = () => reject(new Error(`Failed to load script from ${scriptSrc}.`));
+    script.onerror = () =>
+      reject(new Error(`Failed to load script from ${scriptSrc}.`));
     document.head.appendChild(script);
   });
 }
 
 type SigWebCaptureFunction = (...args: unknown[]) => unknown;
 
-function resolveSigWebCaptureFunction(globalObject: any): SigWebCaptureFunction | undefined {
+function resolveSigWebCaptureFunction(
+  globalObject: any
+): SigWebCaptureFunction | undefined {
   for (const functionName of SIGWEB_CAPTURE_FUNCTION_CANDIDATES) {
     const candidate = globalObject?.[functionName];
     if (typeof candidate === "function") {
@@ -1275,7 +1638,14 @@ function extractStringFromUnknown(value: unknown): string | undefined {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  const candidateKeys = ["value", "dataUrl", "imageData", "signature", "result", "data"];
+  const candidateKeys = [
+    "value",
+    "dataUrl",
+    "imageData",
+    "signature",
+    "result",
+    "data"
+  ];
   for (const key of candidateKeys) {
     const extracted = extractStringFromUnknown(record[key]);
     if (extracted) {
@@ -1298,9 +1668,10 @@ function normalizeSignatureImageDataUrl(value: string): string | undefined {
   }
 
   const commaIndex = trimmed.indexOf(",");
-  const candidateBase64 = commaIndex >= 0 && /base64/i.test(trimmed.slice(0, commaIndex))
-    ? trimmed.slice(commaIndex + 1)
-    : trimmed;
+  const candidateBase64 =
+    commaIndex >= 0 && /base64/i.test(trimmed.slice(0, commaIndex))
+      ? trimmed.slice(commaIndex + 1)
+      : trimmed;
   const normalizedBase64 = candidateBase64.replace(/\s+/g, "");
   if (/^[A-Za-z0-9+/=]+$/.test(normalizedBase64)) {
     return `data:image/png;base64,${normalizedBase64}`;
@@ -1308,7 +1679,9 @@ function normalizeSignatureImageDataUrl(value: string): string | undefined {
   return undefined;
 }
 
-function normalizeSignatureImageFromUnknown(value: unknown): string | undefined {
+function normalizeSignatureImageFromUnknown(
+  value: unknown
+): string | undefined {
   const extracted = extractStringFromUnknown(value);
   return extracted ? normalizeSignatureImageDataUrl(extracted) : undefined;
 }
@@ -1324,7 +1697,7 @@ function rasterizeImageDataUrlToPng(dataUrl: string): Promise<string> {
   if (!dataUrl || typeof document === "undefined") {
     return Promise.resolve(dataUrl);
   }
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const image = new Image();
     image.onload = () => {
       try {
@@ -1362,7 +1735,11 @@ function getSigWebPointCount(globalObject: any): number | undefined {
   }
 }
 
-function callOptionalSigWebFunction(globalObject: any, functionName: string, ...args: unknown[]): void {
+function callOptionalSigWebFunction(
+  globalObject: any,
+  functionName: string,
+  ...args: unknown[]
+): void {
   const fn = globalObject?.[functionName];
   if (typeof fn !== "function") {
     return;
@@ -1381,7 +1758,9 @@ function applySigWebImageDefaults(globalObject: any): void {
   callOptionalSigWebFunction(globalObject, "SetImagePenWidth", 4);
 }
 
-function captureSignatureFromSigWeb(captureFunction: SigWebCaptureFunction): Promise<string | undefined> {
+function captureSignatureFromSigWeb(
+  captureFunction: SigWebCaptureFunction
+): Promise<string | undefined> {
   const immediateResult = (() => {
     try {
       return normalizeSignatureImageFromUnknown(captureFunction());
@@ -1393,7 +1772,7 @@ function captureSignatureFromSigWeb(captureFunction: SigWebCaptureFunction): Pro
     return Promise.resolve(immediateResult);
   }
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let settled = false;
     const finish = (result?: unknown) => {
       if (settled) {
@@ -1445,14 +1824,26 @@ function normalizeTimeInputValue(value: string): string {
   if (direct24h) {
     const hours = Number(direct24h[1]);
     const minutes = Number(direct24h[2]);
-    if (Number.isFinite(hours) && Number.isFinite(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    if (
+      Number.isFinite(hours) &&
+      Number.isFinite(minutes) &&
+      hours >= 0 &&
+      hours <= 23 &&
+      minutes >= 0 &&
+      minutes <= 59
+    ) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+        2,
+        "0"
+      )}`;
     }
   }
   const parsed = Date.parse(`1970-01-01T${trimmed}`);
   if (!Number.isNaN(parsed)) {
     const parsedDate = new Date(parsed);
-    return `${String(parsedDate.getHours()).padStart(2, "0")}:${String(parsedDate.getMinutes()).padStart(2, "0")}`;
+    return `${String(parsedDate.getHours()).padStart(2, "0")}:${String(
+      parsedDate.getMinutes()
+    ).padStart(2, "0")}`;
   }
   return "";
 }
@@ -1506,8 +1897,16 @@ function formatDateByPattern(date: Date, pattern: string): string | undefined {
     return undefined;
   }
   const datePart = date.toLocaleDateString("en-US");
-  const time24 = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const time12 = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const time24 = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  const time12 = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  });
   if (safePattern === "MM/dd/yyyy") {
     return datePart;
   }
@@ -1523,13 +1922,18 @@ function formatDateByPattern(date: Date, pattern: string): string | undefined {
   return undefined;
 }
 
-function resolveComputedTokenValue(tokenKey: string, configuredFormat?: string): string | undefined {
+function resolveComputedTokenValue(
+  tokenKey: string,
+  configuredFormat?: string
+): string | undefined {
   const normalized = tokenKey.trim().toLowerCase();
   if (!normalized) {
     return undefined;
   }
   const now = new Date();
-  const formatted = configuredFormat ? formatDateByPattern(now, configuredFormat) : undefined;
+  const formatted = configuredFormat
+    ? formatDateByPattern(now, configuredFormat)
+    : undefined;
   if (formatted) {
     return formatted;
   }
@@ -1537,10 +1941,17 @@ function resolveComputedTokenValue(tokenKey: string, configuredFormat?: string):
     return now.toLocaleDateString("en-US");
   }
   if (normalized === "__currenttime" || normalized === "__nowtime") {
-    return now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return now.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
   }
   if (normalized === "__currentdatetime" || normalized === "__now") {
-    return `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+    return `${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString(
+      "en-US",
+      { hour: "2-digit", minute: "2-digit", hour12: false }
+    )}`;
   }
   return undefined;
 }
@@ -1558,23 +1969,29 @@ function stringifyTemplateTokenValue(value: unknown): string {
   return "";
 }
 
-function resolveMultiVariableText(template: string, values: Record<string, unknown>): string {
+function resolveMultiVariableText(
+  template: string,
+  values: Record<string, unknown>
+): string {
   if (!template || !template.trim()) {
     return "";
   }
-  return template.replace(/\{([^{}]+)\}/g, (_match: string, tokenName: string) => {
-    const key = String(tokenName || "").trim();
-    if (!key) {
-      return "";
+  return template.replace(
+    /\{([^{}]+)\}/g,
+    (_match: string, tokenName: string) => {
+      const key = String(tokenName || "").trim();
+      if (!key) {
+        return "";
+      }
+      const raw = values[key];
+      const text = stringifyTemplateTokenValue(raw);
+      if (text.trim()) {
+        return text;
+      }
+      const computed = resolveComputedTokenValue(key);
+      return computed || "";
     }
-    const raw = values[key];
-    const text = stringifyTemplateTokenValue(raw);
-    if (text.trim()) {
-      return text;
-    }
-    const computed = resolveComputedTokenValue(key);
-    return computed || "";
-  });
+  );
 }
 
 function toBooleanLike(value: unknown): boolean | undefined {
@@ -1600,7 +2017,10 @@ function toBooleanLike(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknown): ViewerFieldValue | undefined {
+function normalizeViewerValueFromPdfField(
+  field: TemplateField,
+  rawValue: unknown
+): ViewerFieldValue | undefined {
   if (rawValue === undefined || rawValue === null) {
     return undefined;
   }
@@ -1617,7 +2037,10 @@ function normalizeViewerValueFromPdfField(field: TemplateField, rawValue: unknow
   return String(rawValue);
 }
 
-function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFieldValue | undefined): ViewerFieldValue {
+function initialViewerFieldValue(
+  field: TemplateField,
+  previousValue: ViewerFieldValue | undefined
+): ViewerFieldValue {
   if (field.type === "checkbox") {
     return typeof previousValue === "boolean" ? previousValue : false;
   }
@@ -1637,12 +2060,19 @@ function initialViewerFieldValue(field: TemplateField, previousValue: ViewerFiel
     return previousValue;
   }
   if (isComputedTokenKey(field.key)) {
-    return resolveComputedTokenValue(field.key, field.type === "date" ? field.format : undefined) || "";
+    return (
+      resolveComputedTokenValue(
+        field.key,
+        field.type === "date" ? field.format : undefined
+      ) || ""
+    );
   }
   return "";
 }
 
-function InlineSignatureCanvas(props: InlineSignatureCanvasProps): ReactElement {
+function InlineSignatureCanvas(
+  props: InlineSignatureCanvasProps
+): ReactElement {
   const { value, width, height, onChange, onFocus } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
@@ -1656,7 +2086,10 @@ function InlineSignatureCanvas(props: InlineSignatureCanvasProps): ReactElement 
 
     const safeWidth = Math.max(20, Math.round(width));
     const safeHeight = Math.max(20, Math.round(height));
-    const ratio = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    const ratio =
+      typeof window !== "undefined" && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
     canvas.width = Math.max(1, Math.round(safeWidth * ratio));
     canvas.height = Math.max(1, Math.round(safeHeight * ratio));
     canvas.style.width = `${safeWidth}px`;
@@ -1695,7 +2128,9 @@ function InlineSignatureCanvas(props: InlineSignatureCanvasProps): ReactElement 
     drawValue();
   }, [drawValue]);
 
-  const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>): { x: number; y: number } => {
+  const pointFromEvent = (
+    event: ReactPointerEvent<HTMLCanvasElement>
+  ): { x: number; y: number } => {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
@@ -1726,7 +2161,13 @@ function InlineSignatureCanvas(props: InlineSignatureCanvasProps): ReactElement 
     lastPointRef.current = point;
     context.beginPath();
     context.moveTo(point.x, point.y);
-    context.arc(point.x, point.y, Math.max(1, context.lineWidth * 0.45), 0, Math.PI * 2);
+    context.arc(
+      point.x,
+      point.y,
+      Math.max(1, context.lineWidth * 0.45),
+      0,
+      Math.PI * 2
+    );
     context.fill();
   };
 
@@ -1799,7 +2240,10 @@ function loadImageFromBlob(blob: Blob): Promise<LoadedImage> {
   });
 }
 
-function resolveTextTemplateValue(property: unknown, templateItem?: unknown): { value?: string; isLoading: boolean } {
+function resolveTextTemplateValue(
+  property: unknown,
+  templateItem?: unknown
+): { value?: string; isLoading: boolean } {
   if (!property) {
     return { isLoading: false };
   }
@@ -1814,7 +2258,10 @@ function resolveTextTemplateValue(property: unknown, templateItem?: unknown): { 
       return { isLoading: true };
     }
     if (dynamicProperty.status === "available") {
-      return { value: resolveWorkerUrlValue(dynamicProperty.value), isLoading: false };
+      return {
+        value: resolveWorkerUrlValue(dynamicProperty.value),
+        isLoading: false
+      };
     }
     return { isLoading: false };
   }
@@ -1827,14 +2274,21 @@ function resolveTextTemplateValue(property: unknown, templateItem?: unknown): { 
     if (expressionValue.status === "loading") {
       return { isLoading: true };
     }
-    return { value: resolveWorkerUrlValue(expressionValue.value), isLoading: false };
+    return {
+      value: resolveWorkerUrlValue(expressionValue.value),
+      isLoading: false
+    };
   }
 
   return { isLoading: false };
 }
 
-export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactElement {
-  const className = ["pdf-template-designer", props.class].filter(Boolean).join(" ");
+export default function PdfDesignerCore(
+  props: PdfDesignerCoreProps
+): ReactElement {
+  const className = ["pdf-template-designer", props.class]
+    .filter(Boolean)
+    .join(" ");
   const showShortcutHints = props.showShortcutHints !== false;
   const enableKeyboardShortcuts = props.enableKeyboardShortcuts !== false;
   const showFieldProperties = props.showFieldProperties !== false;
@@ -1851,10 +2305,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const showPropertyFontSize = props.showPropertyFontSize !== false;
   const showPropertyAlignment = props.showPropertyAlignment !== false;
   const showPropertyRequired = props.showPropertyRequired !== false;
-  const showPropertyDuplicateAction = props.showPropertyDuplicateAction !== false;
+  const showPropertyDuplicateAction =
+    props.showPropertyDuplicateAction !== false;
   const showPropertyDeleteAction = props.showPropertyDeleteAction !== false;
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
-  const viewMode: ViewMode = isViewMode((props as any).viewMode) ? ((props as any).viewMode as ViewMode) : "designer";
+  const viewMode: ViewMode = isViewMode((props as any).viewMode)
+    ? ((props as any).viewMode as ViewMode)
+    : "designer";
   const isViewerMode = viewMode === "viewer";
   const hasSidebarSections = showPaletteSection || showPagesSection;
   const hasRightPanelSections = showFieldProperties || showFieldsSection;
@@ -1868,7 +2325,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     return map;
   }, [props]);
   const visibleToolRailItems = useMemo(
-    () => TOOL_RAIL_ITEMS.filter(tool => paletteToolVisibilityById[tool.id] !== false),
+    () =>
+      TOOL_RAIL_ITEMS.filter(
+        (tool) => paletteToolVisibilityById[tool.id] !== false
+      ),
     [paletteToolVisibilityById]
   );
   const hasVisibleFieldPropertyControls =
@@ -1905,8 +2365,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pdfDoc, setPdfDoc] = useState<PdfjsDocumentProxy | null>(null);
-  const [imageBackgroundUrl, setImageBackgroundUrl] = useState<string | null>(null);
-  const [imageNaturalSize, setImageNaturalSize] = useState<PageSize | null>(null);
+  const [imageBackgroundUrl, setImageBackgroundUrl] = useState<string | null>(
+    null
+  );
+  const [imageNaturalSize, setImageNaturalSize] = useState<PageSize | null>(
+    null
+  );
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [renderScale, setRenderScale] = useState(1);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -1915,21 +2379,37 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [dataJsonError, setDataJsonError] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [viewerFieldValues, setViewerFieldValues] = useState<Record<string, ViewerFieldValue>>({});
-  const [activeViewerSignatureFieldId, setActiveViewerSignatureFieldId] = useState<string | null>(null);
-  const [viewerSignatureMessage, setViewerSignatureMessage] = useState<string | null>(null);
-  const [sigWebState, setSigWebState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [viewerFieldValues, setViewerFieldValues] = useState<
+    Record<string, ViewerFieldValue>
+  >({});
+  const [activeViewerSignatureFieldId, setActiveViewerSignatureFieldId] =
+    useState<string | null>(null);
+  const [viewerSignatureMessage, setViewerSignatureMessage] = useState<
+    string | null
+  >(null);
+  const [sigWebState, setSigWebState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [sigWebError, setSigWebError] = useState<string | null>(null);
   const [pageThumbs, setPageThumbs] = useState<Record<number, string>>({});
   const [isBuildingThumbs, setIsBuildingThumbs] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState("1");
-  const [draggedFieldListItemId, setDraggedFieldListItemId] = useState<string | null>(null);
-  const [fieldListDropTargetId, setFieldListDropTargetId] = useState<string | null>(null);
+  const [draggedFieldListItemId, setDraggedFieldListItemId] = useState<
+    string | null
+  >(null);
+  const [fieldListDropTargetId, setFieldListDropTargetId] = useState<
+    string | null
+  >(null);
   const [optionDraft, setOptionDraft] = useState("");
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const imageObjectUrlRef = useRef<string | null>(null);
-  const dataSourceItem = useMemo(() => props.dataSource?.[0], [props.dataSource]);
-  const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(props.fieldKeySourceMode)
+  const dataSourceItem = useMemo(
+    () => props.dataSource?.[0],
+    [props.dataSource]
+  );
+  const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(
+    props.fieldKeySourceMode
+  )
     ? props.fieldKeySourceMode
     : "manual";
   const fieldKeyOptionsSource = props.fieldKeyOptionsSource;
@@ -1973,19 +2453,27 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     [(props as any).sigWebScriptUrl]
   );
   const configuredSigWebUrl = sigWebUrlResolution.value;
-  const existingPdfjsLib = (typeof window !== "undefined" ? (window as any).pdfjsLib : undefined) as PdfjsApi | undefined;
+  const existingPdfjsLib = (
+    typeof window !== "undefined" ? (window as any).pdfjsLib : undefined
+  ) as PdfjsApi | undefined;
   const derivedScriptUrl = deriveScriptUrlFromWorkerUrl(configuredWorkerUrl);
   const explicitScriptUrl =
-    configuredScriptUrl || resolveWorkerUrlValue((window as any).pdfjsScriptSrc) || derivedScriptUrl;
-  const resolvedScriptUrl = explicitScriptUrl || (!existingPdfjsLib ? PDFJS_CDN : undefined);
-  const existingWorkerUrl = resolveWorkerUrlValue((existingPdfjsLib as any)?.GlobalWorkerOptions?.workerSrc);
+    configuredScriptUrl ||
+    resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
+    derivedScriptUrl;
+  const resolvedScriptUrl =
+    explicitScriptUrl || (!existingPdfjsLib ? PDFJS_CDN : undefined);
+  const existingWorkerUrl = resolveWorkerUrlValue(
+    (existingPdfjsLib as any)?.GlobalWorkerOptions?.workerSrc
+  );
   const defaultWorkerUrl =
     resolveWorkerUrlValue((window as any).pdfjsWorkerSrc) ||
     existingWorkerUrl ||
     deriveWorkerUrlFromScriptUrl(resolvedScriptUrl) ||
     (!existingPdfjsLib ? PDFJS_WORKER_CDN : undefined);
   const resolvedWorkerUrl = configuredWorkerUrl || defaultWorkerUrl;
-  const isPdfJsConfigLoading = workerUrlResolution.isLoading || scriptUrlResolution.isLoading;
+  const isPdfJsConfigLoading =
+    workerUrlResolution.isLoading || scriptUrlResolution.isLoading;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1996,8 +2484,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     }
 
     loadPdfjs(resolvedScriptUrl)
-      .then(pdfjs => {
-        pdfjs.GlobalWorkerOptions.workerSrc = resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
+      .then((pdfjs) => {
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
       })
       .catch(() => undefined);
   }, [isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl]);
@@ -2041,12 +2530,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         setSigWebState("ready");
         setSigWebError(null);
       })
-      .catch(error => {
+      .catch((error) => {
         if (cancelled) {
           return;
         }
         setSigWebState("error");
-        setSigWebError(error instanceof Error ? error.message : "Failed to load SigWeb script.");
+        setSigWebError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load SigWeb script."
+        );
       });
 
     return () => {
@@ -2061,18 +2554,35 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     return dataSourceItem?.dataJsonAttr;
   }, [dataSourceItem]);
 
-  const basePdfSource = useMemo(() => dataSourceItem?.basePdfSource, [dataSourceItem]);
-  const contextObjectId = useMemo(() => resolveContextObjectId(dataSourceItem), [dataSourceItem]);
-  const basePdfFromDatasourceId = useMemo(() => resolveFirstDatasourceObjectId(basePdfSource), [basePdfSource]);
+  const basePdfSource = useMemo(
+    () => dataSourceItem?.basePdfSource,
+    [dataSourceItem]
+  );
+  const contextObjectId = useMemo(
+    () => resolveContextObjectId(dataSourceItem),
+    [dataSourceItem]
+  );
+  const basePdfFromDatasourceId = useMemo(
+    () => resolveFirstDatasourceObjectId(basePdfSource),
+    [basePdfSource]
+  );
 
   const basePdfId = basePdfFromDatasourceId || contextObjectId;
   const templateJsonText =
-    templateJsonValue && templateJsonValue.status === "available" ? templateJsonValue.value || "" : "";
+    templateJsonValue && templateJsonValue.status === "available"
+      ? templateJsonValue.value || ""
+      : "";
   const dataJsonText =
-    dataJsonValue && dataJsonValue.status === "available" ? dataJsonValue.value || "" : "";
+    dataJsonValue && dataJsonValue.status === "available"
+      ? dataJsonValue.value || ""
+      : "";
   const fieldKeySchemaJsonText =
-    fieldKeySchemaJsonValue && fieldKeySchemaJsonValue.status === "available" ? fieldKeySchemaJsonValue.value || "" : "";
-  const isDataJsonBound = Boolean(dataJsonValue && dataJsonValue.status === "available");
+    fieldKeySchemaJsonValue && fieldKeySchemaJsonValue.status === "available"
+      ? fieldKeySchemaJsonValue.value || ""
+      : "";
+  const isDataJsonBound = Boolean(
+    dataJsonValue && dataJsonValue.status === "available"
+  );
   const showViewerDataJsonBindingWarning = isViewerMode && !isDataJsonBound;
   const jsonKeyOptionsState = useMemo(
     () => parseFieldKeyOptionsJson(fieldKeySchemaJsonText),
@@ -2096,7 +2606,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
     for (const item of items) {
       const attributeValue = fieldKeyOptionAttribute.get(item);
-      if (!attributeValue || normalizeStatus((attributeValue as any).status) !== "available") {
+      if (
+        !attributeValue ||
+        normalizeStatus((attributeValue as any).status) !== "available"
+      ) {
         continue;
       }
       const raw = toTrimmedString((attributeValue as any).value);
@@ -2144,10 +2657,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   }, [templateJsonText, templateJsonValue, selectedFieldId]);
 
   useEffect(() => {
-    setViewerFieldValues(previousValues => {
+    setViewerFieldValues((previousValues) => {
       const nextValues: Record<string, ViewerFieldValue> = {};
       for (const field of fields) {
-        nextValues[field.key] = initialViewerFieldValue(field, previousValues[field.key]);
+        nextValues[field.key] = initialViewerFieldValue(
+          field,
+          previousValues[field.key]
+        );
       }
       const previousKeys = Object.keys(previousValues);
       const nextKeys = Object.keys(nextValues);
@@ -2166,8 +2682,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       return nextValues;
     });
 
-    setActiveViewerSignatureFieldId(previousFieldId =>
-      previousFieldId && fields.some(field => field.type === "signature" && field.id === previousFieldId)
+    setActiveViewerSignatureFieldId((previousFieldId) =>
+      previousFieldId &&
+      fields.some(
+        (field) => field.type === "signature" && field.id === previousFieldId
+      )
         ? previousFieldId
         : null
     );
@@ -2179,14 +2698,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       lastLoadedDataJsonRef.current = undefined;
       lastParsedDataJsonRef.current = {};
       viewerFieldValuesDirtyRef.current = false;
-      setViewerFieldValues(previousValues => {
+      setViewerFieldValues((previousValues) => {
         const nextValues: Record<string, ViewerFieldValue> = {};
         for (const field of fields) {
           nextValues[field.key] = initialViewerFieldValue(field, undefined);
         }
         const previousKeys = Object.keys(previousValues);
         const nextKeys = Object.keys(nextValues);
-        if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+        if (
+          previousKeys.length === nextKeys.length &&
+          nextKeys.every((key) => previousValues[key] === nextValues[key])
+        ) {
           return previousValues;
         }
         return nextValues;
@@ -2202,14 +2724,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       setDataJsonError(parsed.error);
       lastParsedDataJsonRef.current = {};
       viewerFieldValuesDirtyRef.current = false;
-      setViewerFieldValues(previousValues => {
+      setViewerFieldValues((previousValues) => {
         const nextValues: Record<string, ViewerFieldValue> = {};
         for (const field of fields) {
           nextValues[field.key] = initialViewerFieldValue(field, undefined);
         }
         const previousKeys = Object.keys(previousValues);
         const nextKeys = Object.keys(nextValues);
-        if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+        if (
+          previousKeys.length === nextKeys.length &&
+          nextKeys.every((key) => previousValues[key] === nextValues[key])
+        ) {
           return previousValues;
         }
         return nextValues;
@@ -2220,18 +2745,28 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     setDataJsonError(null);
     lastParsedDataJsonRef.current = parsed.values;
     viewerFieldValuesDirtyRef.current = false;
-    setViewerFieldValues(previousValues => {
+    setViewerFieldValues((previousValues) => {
       const nextValues: Record<string, ViewerFieldValue> = {};
       for (const field of fields) {
-        const normalized = normalizeViewerValueFromPdfField(field, parsed.values[field.key]);
+        const normalized = normalizeViewerValueFromPdfField(
+          field,
+          parsed.values[field.key]
+        );
         const shouldUseComputedDefault =
-          isComputedTokenKey(field.key) && typeof normalized === "string" && normalized.trim().length === 0;
+          isComputedTokenKey(field.key) &&
+          typeof normalized === "string" &&
+          normalized.trim().length === 0;
         nextValues[field.key] =
-          normalized === undefined || shouldUseComputedDefault ? initialViewerFieldValue(field, undefined) : normalized;
+          normalized === undefined || shouldUseComputedDefault
+            ? initialViewerFieldValue(field, undefined)
+            : normalized;
       }
       const previousKeys = Object.keys(previousValues);
       const nextKeys = Object.keys(nextValues);
-      if (previousKeys.length === nextKeys.length && nextKeys.every(key => previousValues[key] === nextValues[key])) {
+      if (
+        previousKeys.length === nextKeys.length &&
+        nextKeys.every((key) => previousValues[key] === nextValues[key])
+      ) {
         return previousValues;
       }
       return nextValues;
@@ -2247,7 +2782,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       return;
     }
 
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       if (!entries.length) {
         return;
       }
@@ -2291,7 +2826,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
         try {
           const pdfjs = await loadPdfjs(resolvedScriptUrl);
-          pdfjs.GlobalWorkerOptions.workerSrc = resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
+          pdfjs.GlobalWorkerOptions.workerSrc =
+            resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
           const doc = await pdfjs.getDocument({ data }).promise;
           if (!cancelled) {
             setPdfDoc(doc);
@@ -2308,20 +2844,32 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               revokeImageObjectUrl();
               imageObjectUrlRef.current = loadedImage.url;
               setImageBackgroundUrl(loadedImage.url);
-              setImageNaturalSize({ width: loadedImage.width, height: loadedImage.height });
+              setImageNaturalSize({
+                width: loadedImage.width,
+                height: loadedImage.height
+              });
               setPdfDoc(null);
               setPageIndex(0);
             } else {
               URL.revokeObjectURL(loadedImage.url);
             }
           } catch (imageError) {
-            const pdfMessage = pdfError instanceof Error ? pdfError.message : "Unknown PDF parse error.";
-            const imageMessage = imageError instanceof Error ? imageError.message : "Unknown image parse error.";
-            throw new Error(`Failed to load base document as PDF (${pdfMessage}) or image (${imageMessage}).`);
+            const pdfMessage =
+              pdfError instanceof Error
+                ? pdfError.message
+                : "Unknown PDF parse error.";
+            const imageMessage =
+              imageError instanceof Error
+                ? imageError.message
+                : "Unknown image parse error.";
+            throw new Error(
+              `Failed to load base document as PDF (${pdfMessage}) or image (${imageMessage}).`
+            );
           }
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load PDF.";
+        const message =
+          error instanceof Error ? error.message : "Failed to load PDF.";
         if (!cancelled) {
           setRenderError(message);
           setPdfDoc(null);
@@ -2340,7 +2888,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     return () => {
       cancelled = true;
     };
-  }, [basePdfId, isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl, revokeImageObjectUrl]);
+  }, [
+    basePdfId,
+    isPdfJsConfigLoading,
+    resolvedScriptUrl,
+    resolvedWorkerUrl,
+    revokeImageObjectUrl
+  ]);
 
   useEffect(() => {
     if (!pdfDoc) {
@@ -2389,7 +2943,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         }
         const page = await pdfDoc.getPage(pageIndex + 1);
         const viewport = page.getViewport({ scale: 1 });
-        const fitScale = containerWidth ? Math.min(containerWidth / viewport.width, 2) : 1;
+        const fitScale = containerWidth
+          ? Math.min(containerWidth / viewport.width, 2)
+          : 1;
         const nextScale = fitScale * zoom;
         if (!cancelled) {
           setPageSize({ width: viewport.width, height: viewport.height });
@@ -2408,19 +2964,30 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         canvas.height = scaledViewport.height;
         canvas.style.width = `${scaledViewport.width}px`;
         canvas.style.height = `${scaledViewport.height}px`;
-        const renderTask = page.render({ canvasContext: context, viewport: scaledViewport });
+        const renderTask = page.render({
+          canvasContext: context,
+          viewport: scaledViewport
+        });
         activePageRenderTaskRef.current = renderTask;
         await renderTask.promise;
         if (activePageRenderTaskRef.current === renderTask) {
           activePageRenderTaskRef.current = null;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to render page.";
+        const message =
+          error instanceof Error ? error.message : "Failed to render page.";
         const normalizedMessage = message.toLowerCase();
-        if (normalizedMessage.includes("renderingcancelledexception") || normalizedMessage.includes("rendering cancelled")) {
+        if (
+          normalizedMessage.includes("renderingcancelledexception") ||
+          normalizedMessage.includes("rendering cancelled")
+        ) {
           return;
         }
-        if (normalizedMessage.includes("cannot use the same canvas during multiple render")) {
+        if (
+          normalizedMessage.includes(
+            "cannot use the same canvas during multiple render"
+          )
+        ) {
           return;
         }
         if (!cancelled) {
@@ -2451,8 +3018,13 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       return;
     }
 
-    const fitScale = containerWidth ? Math.min(containerWidth / imageNaturalSize.width, 2) : 1;
-    setPageSize({ width: imageNaturalSize.width, height: imageNaturalSize.height });
+    const fitScale = containerWidth
+      ? Math.min(containerWidth / imageNaturalSize.width, 2)
+      : 1;
+    setPageSize({
+      width: imageNaturalSize.width,
+      height: imageNaturalSize.height
+    });
     setRenderScale(fitScale * zoom);
   }, [pdfDoc, imageNaturalSize, containerWidth, zoom]);
 
@@ -2489,7 +3061,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           await proxy.render({ canvasContext: context, viewport }).promise;
           const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
           if (!cancelled) {
-            setPageThumbs(prev => ({ ...prev, [page - 1]: dataUrl }));
+            setPageThumbs((prev) => ({ ...prev, [page - 1]: dataUrl }));
           }
         } catch (_error) {
           if (cancelled) {
@@ -2508,11 +3080,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     };
   }, [pdfDoc, imageBackgroundUrl]);
 
-  const runConfiguredAction = useCallback((actionValue?: { canExecute: boolean; execute: () => void }) => {
-    if (actionValue?.canExecute) {
-      actionValue.execute();
-    }
-  }, []);
+  const runConfiguredAction = useCallback(
+    (actionValue?: { canExecute: boolean; execute: () => void }) => {
+      if (actionValue?.canExecute) {
+        actionValue.execute();
+      }
+    },
+    []
+  );
 
   const commitDataJson = useCallback(
     (
@@ -2525,8 +3100,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const { runSaveAction = false, runOnChangeAction = false } = options;
       const attribute = dataSourceItem?.dataJsonAttr;
       if (attribute && attribute.status === "available") {
-        const payloadObject = buildDataPayload(fieldsRef.current, nextViewerValues, lastParsedDataJsonRef.current);
-        const payload = buildDataJson(fieldsRef.current, nextViewerValues, lastParsedDataJsonRef.current);
+        const payloadObject = buildDataPayload(
+          fieldsRef.current,
+          nextViewerValues,
+          lastParsedDataJsonRef.current
+        );
+        const payload = buildDataJson(
+          fieldsRef.current,
+          nextViewerValues,
+          lastParsedDataJsonRef.current
+        );
         if ((attribute.value || "") !== payload) {
           try {
             attribute.setValue(payload);
@@ -2550,7 +3133,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   useEffect(() => {
-    if (!isViewerMode || !isDataJsonBound || !viewerFieldValuesDirtyRef.current) {
+    if (
+      !isViewerMode ||
+      !isDataJsonBound ||
+      !viewerFieldValuesDirtyRef.current
+    ) {
       return;
     }
     viewerFieldValuesDirtyRef.current = false;
@@ -2591,7 +3178,12 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const viewerTemplateValues = useMemo(
-    () => buildDataPayload(fields, viewerFieldValues, lastParsedDataJsonRef.current),
+    () =>
+      buildDataPayload(
+        fields,
+        viewerFieldValues,
+        lastParsedDataJsonRef.current
+      ),
     [fields, viewerFieldValues]
   );
 
@@ -2610,7 +3202,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       options: { commit?: boolean; history?: boolean } = {}
     ) => {
       const { commit = true, history = true } = options;
-      setFields(prev => {
+      setFields((prev) => {
         const next = cloneFields(updater(prev));
         if (areFieldsEqual(prev, next)) {
           return prev;
@@ -2658,35 +3250,59 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const defaults = FIELD_DEFAULTS[type];
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
-      const key = overrides?.key?.trim() || nextFieldKey(type, fieldsRef.current);
+      const key =
+        overrides?.key?.trim() || nextFieldKey(type, fieldsRef.current);
       const fieldWidth = Math.max(8, toNumber(overrides?.w, defaults.w));
       const fieldHeight = Math.max(8, toNumber(overrides?.h, defaults.h));
-      const fontSize = Math.max(6, toNumber(overrides?.fontSize, defaults.fontSize));
-      const align = overrides?.align && isAlign(overrides.align) ? overrides.align : defaults.align;
+      const fontSize = Math.max(
+        6,
+        toNumber(overrides?.fontSize, defaults.fontSize)
+      );
+      const align =
+        overrides?.align && isAlign(overrides.align)
+          ? overrides.align
+          : defaults.align;
       const format = normalizeFieldFormat(type, overrides?.format);
-      const snappedX = snapValue(clamp(x - fieldWidth / 2, 0, width - fieldWidth), snapEnabled);
-      const snappedY = snapValue(clamp(y - fieldHeight / 2, 0, height - fieldHeight), snapEnabled);
+      const snappedX = snapValue(
+        clamp(x - fieldWidth / 2, 0, width - fieldWidth),
+        snapEnabled
+      );
+      const snappedY = snapValue(
+        clamp(y - fieldHeight / 2, 0, height - fieldHeight),
+        snapEnabled
+      );
       return {
         id: createFieldId(),
         key,
         label: overrides?.label ?? "",
         variablesSampleData: overrides?.variablesSampleData ?? "",
         format,
-        options: overrides?.options ? [...overrides.options] : defaultOptionsForFieldType(type),
+        options: overrides?.options
+          ? [...overrides.options]
+          : defaultOptionsForFieldType(type),
         imageDataUrl: overrides?.imageDataUrl ?? "",
         labelOrientation:
-          overrides?.labelOrientation && isFieldOrientation(overrides.labelOrientation)
+          overrides?.labelOrientation &&
+          isFieldOrientation(overrides.labelOrientation)
             ? overrides.labelOrientation
             : defaultLabelOrientationForFieldType(type),
         optionsOrientation:
-          overrides?.optionsOrientation && isFieldOrientation(overrides.optionsOrientation)
+          overrides?.optionsOrientation &&
+          isFieldOrientation(overrides.optionsOrientation)
             ? overrides.optionsOrientation
             : defaultOptionsOrientationForFieldType(type),
         showLabel: overrides?.showLabel ?? true,
-        transparentBackground:
-          supportsTransparentBackground(type) ? Boolean(overrides?.transparentBackground) : false,
-        textColor: normalizeHexColor(overrides?.textColor, DEFAULT_FIELD_TEXT_COLOR),
-        backgroundColor: normalizeBackgroundColor(overrides?.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
+        transparentBackground: supportsTransparentBackground(type)
+          ? Boolean(overrides?.transparentBackground)
+          : false,
+        textColor: normalizeHexColor(
+          overrides?.textColor,
+          DEFAULT_FIELD_TEXT_COLOR
+        ),
+        backgroundColor: normalizeBackgroundColor(
+          overrides?.backgroundColor,
+          DEFAULT_FIELD_BACKGROUND_COLOR
+        ),
         type,
         page: pageIndex,
         x: snappedX,
@@ -2730,7 +3346,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       >
     ) => {
       const field = createField(type, x, y, overrides);
-      applyFieldUpdate(prev => [...prev, field]);
+      applyFieldUpdate((prev) => [...prev, field]);
       setSelectedFieldId(field.id);
     },
     [createField, applyFieldUpdate]
@@ -2770,9 +3386,16 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const updateField = useCallback(
-    (fieldId: string, changes: Partial<TemplateField>, options?: { commit?: boolean; history?: boolean }) => {
+    (
+      fieldId: string,
+      changes: Partial<TemplateField>,
+      options?: { commit?: boolean; history?: boolean }
+    ) => {
       applyFieldUpdate(
-        prev => prev.map(field => (field.id === fieldId ? { ...field, ...changes } : field)),
+        (prev) =>
+          prev.map((field) =>
+            field.id === fieldId ? { ...field, ...changes } : field
+          ),
         options
       );
     },
@@ -2781,7 +3404,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
   const deleteField = useCallback(
     (fieldId: string, options?: { commit?: boolean; history?: boolean }) => {
-      applyFieldUpdate(prev => prev.filter(field => field.id !== fieldId), options);
+      applyFieldUpdate(
+        (prev) => prev.filter((field) => field.id !== fieldId),
+        options
+      );
       if (selectedFieldIdRef.current === fieldId) {
         setSelectedFieldId(null);
       }
@@ -2805,7 +3431,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     commitTemplate(next);
     setGuides([]);
     const activeFieldId = selectedFieldIdRef.current;
-    if (activeFieldId && !next.some(field => field.id === activeFieldId)) {
+    if (activeFieldId && !next.some((field) => field.id === activeFieldId)) {
       setSelectedFieldId(next[0]?.id || null);
     }
   }, [commitTemplate]);
@@ -2821,7 +3447,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     commitTemplate(next);
     setGuides([]);
     const activeFieldId = selectedFieldIdRef.current;
-    if (activeFieldId && !next.some(field => field.id === activeFieldId)) {
+    if (activeFieldId && !next.some((field) => field.id === activeFieldId)) {
       setSelectedFieldId(next[0]?.id || null);
     }
   }, [commitTemplate]);
@@ -2831,7 +3457,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     if (!activeFieldId) {
       return;
     }
-    const source = fieldsRef.current.find(field => field.id === activeFieldId);
+    const source = fieldsRef.current.find(
+      (field) => field.id === activeFieldId
+    );
     if (!source) {
       return;
     }
@@ -2843,7 +3471,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       x: snapValue(clamp(source.x + 12, 0, width - source.w), snapEnabled),
       y: snapValue(clamp(source.y + 12, 0, height - source.h), snapEnabled)
     };
-    applyFieldUpdate(prev => [...prev, field]);
+    applyFieldUpdate((prev) => [...prev, field]);
     setSelectedFieldId(field.id);
   }, [applyFieldUpdate, pageSize, snapEnabled]);
 
@@ -2855,9 +3483,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       }
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
-      applyFieldUpdate(prev => {
+      applyFieldUpdate((prev) => {
         let changed = false;
-        const next = prev.map(field => {
+        const next = prev.map((field) => {
           if (field.id !== activeFieldId) {
             return field;
           }
@@ -2876,21 +3504,29 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const selectedField = useMemo(
-    () => fields.find(field => field.id === selectedFieldId) || null,
+    () => fields.find((field) => field.id === selectedFieldId) || null,
     [fields, selectedFieldId]
   );
   const selectedFieldDateFormat =
     selectedField && selectedField.type === "date"
       ? normalizeFieldFormat("date", selectedField.format)
       : DEFAULT_DATE_FIELD_FORMAT;
-  const selectedFieldHasCustomDateFormat = !DATE_FIELD_FORMAT_OPTIONS.some(option => option.value === selectedFieldDateFormat);
-  const selectedFieldSupportsTransparentBackground = Boolean(selectedField && supportsTransparentBackground(selectedField.type));
-  const selectedFieldSupportsColorStyling = selectedFieldSupportsTransparentBackground;
+  const selectedFieldHasCustomDateFormat = !DATE_FIELD_FORMAT_OPTIONS.some(
+    (option) => option.value === selectedFieldDateFormat
+  );
+  const selectedFieldSupportsTransparentBackground = Boolean(
+    selectedField && supportsTransparentBackground(selectedField.type)
+  );
+  const selectedFieldSupportsColorStyling =
+    selectedFieldSupportsTransparentBackground;
   const selectedFieldTextColorPickerValue = selectedField
     ? colorPickerValue(selectedField.textColor, DEFAULT_FIELD_TEXT_COLOR)
     : DEFAULT_FIELD_TEXT_COLOR;
   const selectedFieldBackgroundColorPickerValue = selectedField
-    ? colorPickerValue(selectedField.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR)
+    ? colorPickerValue(
+        selectedField.backgroundColor,
+        DEFAULT_FIELD_BACKGROUND_COLOR
+      )
     : DEFAULT_FIELD_BACKGROUND_COLOR;
   useEffect(() => {
     setOptionDraft("");
@@ -2929,18 +3565,25 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     }
 
     const currentValue = selectedField.key;
-    const hasCurrentValue = keyInputState.options.some(option => option.value === currentValue);
+    const hasCurrentValue = keyInputState.options.some(
+      (option) => option.value === currentValue
+    );
     if (hasCurrentValue || !currentValue) {
       return keyInputState.options;
     }
 
-    return [{ value: currentValue, label: `${currentValue} (current)` }, ...keyInputState.options];
+    return [
+      { value: currentValue, label: `${currentValue} (current)` },
+      ...keyInputState.options
+    ];
   }, [keyInputState, selectedField]);
   const selectedFieldSourceKeyOption = useMemo(() => {
     if (keyInputState.mode !== "dropdown" || !selectedField) {
       return undefined;
     }
-    return keyInputState.options.find(option => option.value === selectedField.key);
+    return keyInputState.options.find(
+      (option) => option.value === selectedField.key
+    );
   }, [keyInputState, selectedField]);
   const selectedFieldEnumOptions = useMemo(
     () => normalizeOptionStrings(selectedFieldSourceKeyOption?.options),
@@ -2951,27 +3594,41 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     (selectedField?.type === "select" || selectedField?.type === "radio") &&
     isEnumerationKeyOption(selectedFieldSourceKeyOption);
   const selectedFieldEffectiveOptions = useMemo(() => {
-    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+    if (
+      !selectedField ||
+      (selectedField.type !== "select" && selectedField.type !== "radio")
+    ) {
       return [] as string[];
     }
     if (selectedFieldIsEnumBound && selectedFieldEnumOptions.length > 0) {
       return selectedFieldEnumOptions;
     }
-    return selectedField.options.length > 0 ? selectedField.options : defaultOptionsForFieldType(selectedField.type);
+    return selectedField.options.length > 0
+      ? selectedField.options
+      : defaultOptionsForFieldType(selectedField.type);
   }, [selectedField, selectedFieldIsEnumBound, selectedFieldEnumOptions]);
   const selectedFieldIsImageKeyBound =
-    Boolean(selectedField) && selectedField?.type === "image" && Boolean(selectedFieldSourceKeyOption);
+    Boolean(selectedField) &&
+    selectedField?.type === "image" &&
+    Boolean(selectedFieldSourceKeyOption);
   const selectedFieldImagePreview = useMemo(() => {
     if (!selectedField || selectedField.type !== "image") {
       return "";
     }
-    const keyedImage = normalizeImageDataFromUnknown(viewerFieldValues[selectedField.key]);
-    const staticImage = normalizeImageDataFromUnknown(selectedField.imageDataUrl);
+    const keyedImage = normalizeImageDataFromUnknown(
+      viewerFieldValues[selectedField.key]
+    );
+    const staticImage = normalizeImageDataFromUnknown(
+      selectedField.imageDataUrl
+    );
     return keyedImage || staticImage;
   }, [selectedField, viewerFieldValues]);
 
   useEffect(() => {
-    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+    if (
+      !selectedField ||
+      (selectedField.type !== "select" && selectedField.type !== "radio")
+    ) {
       return;
     }
     if (!selectedFieldIsEnumBound || selectedFieldEnumOptions.length === 0) {
@@ -2980,8 +3637,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     if (areStringArraysEqual(selectedField.options, selectedFieldEnumOptions)) {
       return;
     }
-    updateField(selectedField.id, { options: [...selectedFieldEnumOptions] }, { history: false });
-  }, [selectedField, selectedFieldIsEnumBound, selectedFieldEnumOptions, updateField]);
+    updateField(
+      selectedField.id,
+      { options: [...selectedFieldEnumOptions] },
+      { history: false }
+    );
+  }, [
+    selectedField,
+    selectedFieldIsEnumBound,
+    selectedFieldEnumOptions,
+    updateField
+  ]);
 
   useEffect(() => {
     if (!dragState) {
@@ -2999,7 +3665,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const width = pageSize.width || DEFAULT_PAGE_SIZE.width;
       const height = pageSize.height || DEFAULT_PAGE_SIZE.height;
       const relatedFields = fieldsRef.current.filter(
-        field => field.page === dragState.startField.page && field.id !== dragState.fieldId
+        (field) =>
+          field.page === dragState.startField.page &&
+          field.id !== dragState.fieldId
       );
       const verticalRefs = relatedFields.flatMap(fieldVerticalLines);
       const horizontalRefs = relatedFields.flatMap(fieldHorizontalLines);
@@ -3011,14 +3679,32 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         }
 
         if (dragState.mode === "move") {
-          let nextX = clamp(dragState.startField.x + deltaX, 0, width - field.w);
-          let nextY = clamp(dragState.startField.y + deltaY, 0, height - field.h);
+          let nextX = clamp(
+            dragState.startField.x + deltaX,
+            0,
+            width - field.w
+          );
+          let nextY = clamp(
+            dragState.startField.y + deltaY,
+            0,
+            height - field.h
+          );
 
           if (snapEnabled) {
             nextX = snapValue(nextX, true);
             nextY = snapValue(nextY, true);
-            const snappedX = snapPositionToReferences(nextX, field.w, verticalRefs, ALIGN_TOLERANCE);
-            const snappedY = snapPositionToReferences(nextY, field.h, horizontalRefs, ALIGN_TOLERANCE);
+            const snappedX = snapPositionToReferences(
+              nextX,
+              field.w,
+              verticalRefs,
+              ALIGN_TOLERANCE
+            );
+            const snappedY = snapPositionToReferences(
+              nextY,
+              field.h,
+              horizontalRefs,
+              ALIGN_TOLERANCE
+            );
             nextX = clamp(snappedX.position, 0, width - field.w);
             nextY = clamp(snappedY.position, 0, height - field.h);
             if (snappedX.guide !== undefined) {
@@ -3034,13 +3720,29 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
         const minW = field.type === "checkbox" ? 12 : 20;
         const minH = field.type === "checkbox" ? 12 : 12;
-        let nextW = clamp(dragState.startField.w + deltaX, minW, width - field.x);
-        let nextH = clamp(dragState.startField.h + deltaY, minH, height - field.y);
+        let nextW = clamp(
+          dragState.startField.w + deltaX,
+          minW,
+          width - field.x
+        );
+        let nextH = clamp(
+          dragState.startField.h + deltaY,
+          minH,
+          height - field.y
+        );
         if (snapEnabled) {
           nextW = snapValue(nextW, true);
           nextH = snapValue(nextH, true);
-          const rightRef = findClosestReference(field.x + nextW, verticalRefs, ALIGN_TOLERANCE);
-          const bottomRef = findClosestReference(field.y + nextH, horizontalRefs, ALIGN_TOLERANCE);
+          const rightRef = findClosestReference(
+            field.x + nextW,
+            verticalRefs,
+            ALIGN_TOLERANCE
+          );
+          const bottomRef = findClosestReference(
+            field.y + nextH,
+            horizontalRefs,
+            ALIGN_TOLERANCE
+          );
           if (rightRef !== undefined) {
             nextW = clamp(rightRef - field.x, minW, width - field.x);
             activeGuides.push({ axis: "x", value: rightRef });
@@ -3054,7 +3756,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       };
 
       applyFieldUpdate(
-        prev => prev.map(field => (field.id === dragState.fieldId ? update(field) : field)),
+        (prev) =>
+          prev.map((field) =>
+            field.id === dragState.fieldId ? update(field) : field
+          ),
         { commit: false, history: false }
       );
       setGuides(activeGuides);
@@ -3064,7 +3769,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       setDragState(null);
       setGuides([]);
       const previous = undoStackRef.current[undoStackRef.current.length - 1];
-      const hasChanged = !previous || !areFieldsEqual(previous, fieldsRef.current);
+      const hasChanged =
+        !previous || !areFieldsEqual(previous, fieldsRef.current);
       if (!hasChanged && previous) {
         undoStackRef.current.pop();
       }
@@ -3079,10 +3785,21 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [dragState, renderScale, pageSize, snapEnabled, applyFieldUpdate, commitTemplate]);
+  }, [
+    dragState,
+    renderScale,
+    pageSize,
+    snapEnabled,
+    applyFieldUpdate,
+    commitTemplate
+  ]);
 
   const handleFieldPointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>, field: TemplateField, mode: "move" | "resize") => {
+    (
+      event: ReactPointerEvent<HTMLDivElement>,
+      field: TemplateField,
+      mode: "move" | "resize"
+    ) => {
       event.stopPropagation();
       event.preventDefault();
       pushUndoSnapshot();
@@ -3100,7 +3817,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   );
 
   const selectedPlacementTool = useMemo(
-    () => visibleToolRailItems.find(tool => tool.id === placementToolId) || null,
+    () =>
+      visibleToolRailItems.find((tool) => tool.id === placementToolId) || null,
     [placementToolId, visibleToolRailItems]
   );
   useEffect(() => {
@@ -3111,23 +3829,43 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
   const buildOverridesForTool = useCallback(
     (tool: (typeof TOOL_RAIL_ITEMS)[number]) => {
-      const key = nextPrefixedFieldKey(tool.keyBase || tool.id || tool.type, fieldsRef.current);
+      const key = nextPrefixedFieldKey(
+        tool.keyBase || tool.id || tool.type,
+        fieldsRef.current
+      );
       return {
         key,
         label: tool.seedLabel || "",
-        variablesSampleData: tool.type === "multiVariableText" ? "{name}" : undefined,
+        variablesSampleData:
+          tool.type === "multiVariableText" ? "{name}" : undefined,
         format: tool.format,
         w: tool.w,
         h: tool.h,
         align: tool.align,
         showLabel: tool.showLabel
-      } as Partial<Pick<TemplateField, "key" | "label" | "variablesSampleData" | "format" | "w" | "h" | "align" | "showLabel">>;
+      } as Partial<
+        Pick<
+          TemplateField,
+          | "key"
+          | "label"
+          | "variablesSampleData"
+          | "format"
+          | "w"
+          | "h"
+          | "align"
+          | "showLabel"
+        >
+      >;
     },
     []
   );
 
   const placeToolAtClientPoint = useCallback(
-    (tool: (typeof TOOL_RAIL_ITEMS)[number], clientX: number, clientY: number) => {
+    (
+      tool: (typeof TOOL_RAIL_ITEMS)[number],
+      clientX: number,
+      clientY: number
+    ) => {
       if (!overlayRef.current) {
         return;
       }
@@ -3159,26 +3897,34 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     [addFieldAt, renderScale]
   );
 
-  const handlePaletteDragStart = useCallback((event: ReactDragEvent<HTMLButtonElement>, toolId: string) => {
-    event.dataTransfer.setData(PALETTE_TYPE_DRAG_TYPE, toolId);
-    event.dataTransfer.effectAllowed = "copy";
-    setPlacementToolId(toolId);
-  }, []);
+  const handlePaletteDragStart = useCallback(
+    (event: ReactDragEvent<HTMLButtonElement>, toolId: string) => {
+      event.dataTransfer.setData(PALETTE_TYPE_DRAG_TYPE, toolId);
+      event.dataTransfer.effectAllowed = "copy";
+      setPlacementToolId(toolId);
+    },
+    []
+  );
 
-  const handleOverlayDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    if (!event.dataTransfer.types.includes(PALETTE_TYPE_DRAG_TYPE)) {
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }, []);
+  const handleOverlayDragOver = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes(PALETTE_TYPE_DRAG_TYPE)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    []
+  );
 
   const handleOverlayDrop = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      const droppedToolId = event.dataTransfer.getData(PALETTE_TYPE_DRAG_TYPE).trim();
+      const droppedToolId = event.dataTransfer
+        .getData(PALETTE_TYPE_DRAG_TYPE)
+        .trim();
       const droppedTool =
-        visibleToolRailItems.find(tool => tool.id === droppedToolId) ||
-        visibleToolRailItems.find(tool => tool.type === droppedToolId);
+        visibleToolRailItems.find((tool) => tool.id === droppedToolId) ||
+        visibleToolRailItems.find((tool) => tool.type === droppedToolId);
       if (droppedTool) {
         event.preventDefault();
         placeToolAtClientPoint(droppedTool, event.clientX, event.clientY);
@@ -3200,7 +3946,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       }
       if (selectedPlacementTool) {
         event.preventDefault();
-        placeToolAtClientPoint(selectedPlacementTool, event.clientX, event.clientY);
+        placeToolAtClientPoint(
+          selectedPlacementTool,
+          event.clientX,
+          event.clientY
+        );
         return;
       }
       setSelectedFieldId(null);
@@ -3285,15 +4035,29 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isViewerMode, enableKeyboardShortcuts, undo, redo, duplicateSelectedField, deleteField, nudgeSelectedField]);
+  }, [
+    isViewerMode,
+    enableKeyboardShortcuts,
+    undo,
+    redo,
+    duplicateSelectedField,
+    deleteField,
+    nudgeSelectedField
+  ]);
 
   const handleSaveClick = useCallback(() => {
     if (isViewerMode) {
       viewerFieldValuesDirtyRef.current = false;
-      commitDataJson(viewerFieldValues, { runSaveAction: true, runOnChangeAction: false });
+      commitDataJson(viewerFieldValues, {
+        runSaveAction: true,
+        runOnChangeAction: false
+      });
       return;
     }
-    commitTemplate(fieldsRef.current, { runSaveAction: true, runOnChangeAction: false });
+    commitTemplate(fieldsRef.current, {
+      runSaveAction: true,
+      runOnChangeAction: false
+    });
   }, [isViewerMode, commitDataJson, viewerFieldValues, commitTemplate]);
 
   const handleReloadTemplateClick = useCallback(() => {
@@ -3323,7 +4087,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `template-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+    link.download = `template-${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, "-")}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -3335,9 +4102,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       if (!sourceId || !targetId || sourceId === targetId) {
         return;
       }
-      applyFieldUpdate(prev => {
-        const fromIndex = prev.findIndex(field => field.id === sourceId);
-        const toIndex = prev.findIndex(field => field.id === targetId);
+      applyFieldUpdate((prev) => {
+        const fromIndex = prev.findIndex((field) => field.id === sourceId);
+        const toIndex = prev.findIndex((field) => field.id === targetId);
         if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
           return prev;
         }
@@ -3355,18 +4122,24 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     setFieldListDropTargetId(null);
   }, []);
 
-  const setViewerFieldValue = useCallback((fieldKey: string, value: ViewerFieldValue) => {
-    setViewerFieldValues(previousValues => {
-      if (previousValues[fieldKey] === value) {
-        return previousValues;
-      }
-      viewerFieldValuesDirtyRef.current = true;
-      return { ...previousValues, [fieldKey]: value };
-    });
-  }, []);
+  const setViewerFieldValue = useCallback(
+    (fieldKey: string, value: ViewerFieldValue) => {
+      setViewerFieldValues((previousValues) => {
+        if (previousValues[fieldKey] === value) {
+          return previousValues;
+        }
+        viewerFieldValuesDirtyRef.current = true;
+        return { ...previousValues, [fieldKey]: value };
+      });
+    },
+    []
+  );
 
   const addOptionToSelectedField = useCallback(() => {
-    if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+    if (
+      !selectedField ||
+      (selectedField.type !== "select" && selectedField.type !== "radio")
+    ) {
       return;
     }
     if (selectedFieldIsEnumBound) {
@@ -3384,11 +4157,20 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     nextOptions.push(nextOption);
     updateField(selectedField.id, { options: nextOptions });
     setOptionDraft("");
-  }, [selectedField, selectedFieldIsEnumBound, optionDraft, selectedFieldEffectiveOptions, updateField]);
+  }, [
+    selectedField,
+    selectedFieldIsEnumBound,
+    optionDraft,
+    selectedFieldEffectiveOptions,
+    updateField
+  ]);
 
   const updateSelectedFieldOption = useCallback(
     (index: number, value: string) => {
-      if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+      if (
+        !selectedField ||
+        (selectedField.type !== "select" && selectedField.type !== "radio")
+      ) {
         return;
       }
       if (selectedFieldIsEnumBound) {
@@ -3401,12 +4183,20 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       nextOptions[index] = value;
       updateField(selectedField.id, { options: nextOptions });
     },
-    [selectedField, selectedFieldIsEnumBound, selectedFieldEffectiveOptions, updateField]
+    [
+      selectedField,
+      selectedFieldIsEnumBound,
+      selectedFieldEffectiveOptions,
+      updateField
+    ]
   );
 
   const removeSelectedFieldOption = useCallback(
     (index: number) => {
-      if (!selectedField || (selectedField.type !== "select" && selectedField.type !== "radio")) {
+      if (
+        !selectedField ||
+        (selectedField.type !== "select" && selectedField.type !== "radio")
+      ) {
         return;
       }
       if (selectedFieldIsEnumBound) {
@@ -3415,15 +4205,26 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       if (index < 0 || index >= selectedFieldEffectiveOptions.length) {
         return;
       }
-      const nextOptions = selectedFieldEffectiveOptions.filter((_option, optionIndex) => optionIndex !== index);
+      const nextOptions = selectedFieldEffectiveOptions.filter(
+        (_option, optionIndex) => optionIndex !== index
+      );
       updateField(selectedField.id, { options: nextOptions });
     },
-    [selectedField, selectedFieldIsEnumBound, selectedFieldEffectiveOptions, updateField]
+    [
+      selectedField,
+      selectedFieldIsEnumBound,
+      selectedFieldEffectiveOptions,
+      updateField
+    ]
   );
 
   const handleSelectedFieldImageUpload = useCallback(
     (event: ReactChangeEvent<HTMLInputElement>) => {
-      if (!selectedField || selectedField.type !== "image" || selectedFieldIsImageKeyBound) {
+      if (
+        !selectedField ||
+        selectedField.type !== "image" ||
+        selectedFieldIsImageKeyBound
+      ) {
         return;
       }
       const selectedFieldImageId = selectedField.id;
@@ -3445,8 +4246,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           return;
         }
         rasterizeImageDataUrlToPng(normalized)
-          .then(rasterized => {
-            const finalImage = normalizeImageDataFromUnknown(rasterized) || normalized;
+          .then((rasterized) => {
+            const finalImage =
+              normalizeImageDataFromUnknown(rasterized) || normalized;
             setImageUploadError(null);
             updateField(selectedFieldImageId, { imageDataUrl: finalImage });
           })
@@ -3495,18 +4297,30 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       }
 
       const pointCountBeforeCapture = getSigWebPointCount(globalObject);
-      if (pointCountBeforeCapture !== undefined && pointCountBeforeCapture <= 0) {
-        setViewerSignatureMessage("No pen strokes were detected on the signature pad. Please sign first, then click Use SigWeb.");
+      if (
+        pointCountBeforeCapture !== undefined &&
+        pointCountBeforeCapture <= 0
+      ) {
+        setViewerSignatureMessage(
+          "No pen strokes were detected on the signature pad. Please sign first, then click Use SigWeb."
+        );
         return;
       }
 
       try {
         applySigWebImageDefaults(globalObject);
-        const normalizedValue = await captureSignatureFromSigWeb(captureFunction);
+        const normalizedValue = await captureSignatureFromSigWeb(
+          captureFunction
+        );
         if (!normalizedValue) {
           const pointCountAfterCapture = getSigWebPointCount(globalObject);
-          if (pointCountAfterCapture !== undefined && pointCountAfterCapture <= 0) {
-            setViewerSignatureMessage("SigWeb reported no captured points. Please sign on the pad and try again.");
+          if (
+            pointCountAfterCapture !== undefined &&
+            pointCountAfterCapture <= 0
+          ) {
+            setViewerSignatureMessage(
+              "SigWeb reported no captured points. Please sign on the pad and try again."
+            );
           } else {
             setViewerSignatureMessage(
               "SigWeb returned no signature image. Verify SigWebTablet.js is connected to the pad service and try again."
@@ -3517,15 +4331,18 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         setViewerFieldValue(fieldKey, normalizedValue);
         setViewerSignatureMessage(null);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown SigWeb error.";
-        setViewerSignatureMessage(`Failed to import signature from SigWeb. ${message}`);
+        const message =
+          error instanceof Error ? error.message : "Unknown SigWeb error.";
+        setViewerSignatureMessage(
+          `Failed to import signature from SigWeb. ${message}`
+        );
       }
     },
     [setViewerFieldValue]
   );
 
   const handlePlacementSelect = useCallback((toolId: string) => {
-    setPlacementToolId(current => (current === toolId ? null : toolId));
+    setPlacementToolId((current) => (current === toolId ? null : toolId));
   }, []);
 
   const applyPageJump = useCallback(() => {
@@ -3536,7 +4353,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   }, [pageJumpInput, pageIndex, pdfDoc, imageBackgroundUrl]);
 
   const pageCount = pdfDoc?.numPages || (imageBackgroundUrl ? 1 : 1);
-  const fieldsOnPage = fields.filter(field => field.page === pageIndex);
+  const fieldsOnPage = fields.filter((field) => field.page === pageIndex);
   const undoDisabled = undoStackRef.current.length === 0;
   const redoDisabled = redoStackRef.current.length === 0;
   const hasRenderableDocument = Boolean(pdfDoc || imageBackgroundUrl);
@@ -3546,7 +4363,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   const activeViewerSignatureField = useMemo(
     () =>
       fieldsOnPage.find(
-        field =>
+        (field) =>
           field.type === "signature" &&
           activeViewerSignatureFieldId !== null &&
           field.id === activeViewerSignatureFieldId
@@ -3568,7 +4385,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             <input
               type="checkbox"
               checked={Boolean(viewerFieldValues[field.key])}
-              onChange={event => setViewerFieldValue(field.key, event.target.checked)}
+              onChange={(event) =>
+                setViewerFieldValue(field.key, event.target.checked)
+              }
             />
             <span>{field.showLabel ? field.label || field.key : ""}</span>
           </label>
@@ -3577,7 +4396,8 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
       if (field.type === "signature") {
         const rawSignatureValue = viewerFieldValues[field.key];
-        const signatureValue = typeof rawSignatureValue === "string" ? rawSignatureValue : "";
+        const signatureValue =
+          typeof rawSignatureValue === "string" ? rawSignatureValue : "";
         return (
           <InlineSignatureCanvas
             width={Math.max(20, field.w * renderScale)}
@@ -3587,7 +4407,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               setActiveViewerSignatureFieldId(field.id);
               setViewerSignatureMessage(null);
             }}
-            onChange={nextValue => {
+            onChange={(nextValue) => {
               setViewerFieldValue(field.key, nextValue);
               setActiveViewerSignatureFieldId(field.id);
               setViewerSignatureMessage(null);
@@ -3597,22 +4417,44 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       }
 
       if (field.type === "image") {
-        const keyedImage = normalizeImageDataFromUnknown(viewerFieldValues[field.key]);
+        const keyedImage = normalizeImageDataFromUnknown(
+          viewerFieldValues[field.key]
+        );
         const staticImage = normalizeImageDataFromUnknown(field.imageDataUrl);
         const imageSrc = keyedImage || staticImage;
         if (imageSrc) {
-          return <img className="pdf-template-designer__viewer-image" src={imageSrc} alt={field.label || field.key || "Image"} draggable={false} />;
+          return (
+            <img
+              className="pdf-template-designer__viewer-image"
+              src={imageSrc}
+              alt={field.label || field.key || "Image"}
+              draggable={false}
+            />
+          );
         }
-        return <div className="pdf-template-designer__viewer-image-placeholder">{field.label || field.key || "Image"}</div>;
+        return (
+          <div className="pdf-template-designer__viewer-image-placeholder">
+            {field.label || field.key || "Image"}
+          </div>
+        );
       }
 
       if (field.type === "multiVariableText") {
-        const resolved = resolveMultiVariableText(field.variablesSampleData || "", viewerTemplateValues);
-        return <div className="pdf-template-designer__viewer-multi">{resolved}</div>;
+        const resolved = resolveMultiVariableText(
+          field.variablesSampleData || "",
+          viewerTemplateValues
+        );
+        return (
+          <div className="pdf-template-designer__viewer-multi">{resolved}</div>
+        );
       }
 
-      const resolvedBackgroundColor =
-        field.transparentBackground ? "transparent" : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR);
+      const resolvedBackgroundColor = field.transparentBackground
+        ? "transparent"
+        : normalizeBackgroundColor(
+            field.backgroundColor,
+            DEFAULT_FIELD_BACKGROUND_COLOR
+          );
       const inputStyle = {
         fontSize: Math.max(10, field.fontSize * renderScale * 0.9),
         textAlign: field.align,
@@ -3623,23 +4465,35 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       const value = typeof rawValue === "string" ? rawValue : "";
       const computedFallback =
         isComputedTokenKey(field.key) && !value.trim()
-          ? resolveComputedTokenValue(field.key, field.type === "date" ? field.format : undefined) || ""
+          ? resolveComputedTokenValue(
+              field.key,
+              field.type === "date" ? field.format : undefined
+            ) || ""
           : "";
       const displayValue = value.trim() ? value : computedFallback;
       if (field.type === "select") {
-        const options = field.options.length > 0 ? field.options : defaultOptionsForFieldType(field.type);
+        const options =
+          field.options.length > 0
+            ? field.options
+            : defaultOptionsForFieldType(field.type);
         const hasDisplayValue = displayValue.trim().length > 0;
-        const hasOptionValue = options.some(option => option === displayValue);
+        const hasOptionValue = options.some(
+          (option) => option === displayValue
+        );
         return (
           <select
             className="pdf-template-designer__viewer-input pdf-template-designer__viewer-select"
             value={displayValue}
             style={inputStyle}
-            onChange={event => setViewerFieldValue(field.key, event.target.value)}
+            onChange={(event) =>
+              setViewerFieldValue(field.key, event.target.value)
+            }
           >
             {!hasDisplayValue ? <option value=""></option> : null}
-            {!hasOptionValue && hasDisplayValue ? <option value={displayValue}>{displayValue}</option> : null}
-            {options.map(option => (
+            {!hasOptionValue && hasDisplayValue ? (
+              <option value={displayValue}>{displayValue}</option>
+            ) : null}
+            {options.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
@@ -3648,7 +4502,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         );
       }
       if (field.type === "radio") {
-        const options = field.options.length > 0 ? field.options : defaultOptionsForFieldType(field.type);
+        const options =
+          field.options.length > 0
+            ? field.options
+            : defaultOptionsForFieldType(field.type);
         if (options.length === 0) {
           return (
             <input
@@ -3656,7 +4513,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               type="text"
               value={displayValue}
               style={inputStyle}
-              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+              onChange={(event) =>
+                setViewerFieldValue(field.key, event.target.value)
+              }
             />
           );
         }
@@ -3668,14 +4527,17 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 : " pdf-template-designer__viewer-radio-group--vertical"
             }`}
           >
-            {options.map(option => (
-              <label key={option} className="pdf-template-designer__viewer-radio-option">
+            {options.map((option) => (
+              <label
+                key={option}
+                className="pdf-template-designer__viewer-radio-option"
+              >
                 <input
                   type="radio"
                   name={`radio_${field.id}`}
                   value={option}
                   checked={displayValue === option}
-                  onChange={event => {
+                  onChange={(event) => {
                     if (event.target.checked) {
                       setViewerFieldValue(field.key, option);
                     }
@@ -3691,7 +4553,10 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
       if (field.type === "date") {
         if (isComputedTokenKey(field.key)) {
           return (
-            <div className="pdf-template-designer__viewer-date-static" style={inputStyle}>
+            <div
+              className="pdf-template-designer__viewer-date-static"
+              style={inputStyle}
+            >
               {displayValue}
             </div>
           );
@@ -3710,7 +4575,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 type="text"
                 value={displayValue}
                 style={inputStyle}
-                onChange={event => setViewerFieldValue(field.key, event.target.value)}
+                onChange={(event) =>
+                  setViewerFieldValue(field.key, event.target.value)
+                }
               />
             );
           }
@@ -3720,7 +4587,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               type="time"
               value={normalizedTimeValue}
               style={inputStyle}
-              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+              onChange={(event) =>
+                setViewerFieldValue(field.key, event.target.value)
+              }
             />
           );
         }
@@ -3732,7 +4601,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               type="text"
               value={displayValue}
               style={inputStyle}
-              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+              onChange={(event) =>
+                setViewerFieldValue(field.key, event.target.value)
+              }
             />
           );
         }
@@ -3745,7 +4616,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               type="text"
               value={displayValue}
               style={inputStyle}
-              onChange={event => setViewerFieldValue(field.key, event.target.value)}
+              onChange={(event) =>
+                setViewerFieldValue(field.key, event.target.value)
+              }
             />
           );
         }
@@ -3755,7 +4628,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             type="date"
             value={normalizedDateValue}
             style={inputStyle}
-            onChange={event => setViewerFieldValue(field.key, event.target.value)}
+            onChange={(event) =>
+              setViewerFieldValue(field.key, event.target.value)
+            }
           />
         );
       }
@@ -3766,7 +4641,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           type="text"
           value={displayValue}
           style={inputStyle}
-          onChange={event => setViewerFieldValue(field.key, event.target.value)}
+          onChange={(event) =>
+            setViewerFieldValue(field.key, event.target.value)
+          }
         />
       );
     },
@@ -3776,7 +4653,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   if (!props.dataSource && !isViewerMode) {
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
-        <div className="pdf-template-designer__alert">Configure a data source for FormConfiguration.</div>
+        <div className="pdf-template-designer__alert">
+          Configure a data source for FormConfiguration.
+        </div>
       </div>
     );
   }
@@ -3800,7 +4679,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               </div>
               <button
                 className="pdf-template-designer__button"
-                onClick={() => setPageIndex(Math.min(pageCount - 1, pageIndex + 1))}
+                onClick={() =>
+                  setPageIndex(Math.min(pageCount - 1, pageIndex + 1))
+                }
                 type="button"
                 disabled={pageIndex >= pageCount - 1}
               >
@@ -3813,9 +4694,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   min={1}
                   max={pageCount}
                   value={pageJumpInput}
-                  onChange={event => setPageJumpInput(event.target.value)}
+                  onChange={(event) => setPageJumpInput(event.target.value)}
                   onBlur={applyPageJump}
-                  onKeyDown={event => {
+                  onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       applyPageJump();
                     }
@@ -3827,7 +4708,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               <select
                 className="pdf-template-designer__select"
                 value={zoom}
-                onChange={event => setZoom(Number(event.target.value))}
+                onChange={(event) => setZoom(Number(event.target.value))}
               >
                 <option value={0.75}>75%</option>
                 <option value={1}>100%</option>
@@ -3844,25 +4725,54 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
             </div>
           </div>
           {sigWebState === "loading" ? (
-            <div className="pdf-template-designer__status">Loading SigWeb integration...</div>
-          ) : null}
-          {sigWebError ? <div className="pdf-template-designer__alert">{sigWebError}</div> : null}
-          {showViewerDataJsonBindingWarning ? (
-            <div className="pdf-template-designer__alert">
-              Viewer mode Data JSON is not bound. User edits and signatures will not persist.
+            <div className="pdf-template-designer__status">
+              Loading SigWeb integration...
             </div>
           ) : null}
-          {dataJsonError ? <div className="pdf-template-designer__alert">Data JSON is invalid. {dataJsonError}</div> : null}
-          {viewerSignatureMessage ? <div className="pdf-template-designer__alert">{viewerSignatureMessage}</div> : null}
+          {sigWebError ? (
+            <div className="pdf-template-designer__alert">{sigWebError}</div>
+          ) : null}
+          {showViewerDataJsonBindingWarning ? (
+            <div className="pdf-template-designer__alert">
+              Viewer mode Data JSON is not bound. User edits and signatures will
+              not persist.
+            </div>
+          ) : null}
+          {dataJsonError ? (
+            <div className="pdf-template-designer__alert">
+              Data JSON is invalid. {dataJsonError}
+            </div>
+          ) : null}
+          {viewerSignatureMessage ? (
+            <div className="pdf-template-designer__alert">
+              {viewerSignatureMessage}
+            </div>
+          ) : null}
 
           <div className="pdf-template-designer__viewer" ref={viewerRef}>
-            {!basePdfId ? <div className="pdf-template-designer__status">No base PDF linked.</div> : null}
-            {loadingPdf ? <div className="pdf-template-designer__status">Loading document...</div> : null}
-            {renderError ? <div className="pdf-template-designer__alert">{renderError}</div> : null}
+            {!basePdfId ? (
+              <div className="pdf-template-designer__status">
+                No base PDF linked.
+              </div>
+            ) : null}
+            {loadingPdf ? (
+              <div className="pdf-template-designer__status">
+                Loading document...
+              </div>
+            ) : null}
+            {renderError ? (
+              <div className="pdf-template-designer__alert">{renderError}</div>
+            ) : null}
             {hasRenderableDocument ? (
-              <div className="pdf-template-designer__page" style={{ width: renderWidth, height: renderHeight }}>
+              <div
+                className="pdf-template-designer__page"
+                style={{ width: renderWidth, height: renderHeight }}
+              >
                 {pdfDoc ? (
-                  <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />
+                  <canvas
+                    className="pdf-template-designer__canvas-surface"
+                    ref={canvasRef}
+                  />
                 ) : imageBackgroundUrl ? (
                   <img
                     className="pdf-template-designer__image-surface"
@@ -3873,22 +4783,31 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   />
                 ) : null}
                 <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
-                  {fieldsOnPage.map(field => (
+                  {fieldsOnPage.map((field) => (
                     <div
                       key={field.id}
-                      className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${field.type}${
-                        activeViewerSignatureFieldId === field.id ? " is-active" : ""
+                      className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
+                        field.type
+                      }${
+                        activeViewerSignatureFieldId === field.id
+                          ? " is-active"
+                          : ""
                       }`}
                       style={{
                         left: field.x * renderScale,
                         top: field.y * renderScale,
                         width: field.w * renderScale,
                         height: field.h * renderScale,
-                        backgroundColor:
-                          field.transparentBackground
-                            ? "transparent"
-                            : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
-                        color: normalizeHexColor(field.textColor, DEFAULT_FIELD_TEXT_COLOR)
+                        backgroundColor: field.transparentBackground
+                          ? "transparent"
+                          : normalizeBackgroundColor(
+                              field.backgroundColor,
+                              DEFAULT_FIELD_BACKGROUND_COLOR
+                            ),
+                        color: normalizeHexColor(
+                          field.textColor,
+                          DEFAULT_FIELD_TEXT_COLOR
+                        )
                       }}
                       onPointerDown={() => {
                         if (field.type === "signature") {
@@ -3907,13 +4826,19 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                       className="pdf-template-designer__signature-actions"
                       style={{
                         left: activeViewerSignatureField.x * renderScale,
-                        top: (activeViewerSignatureField.y + activeViewerSignatureField.h) * renderScale + 6
+                        top:
+                          (activeViewerSignatureField.y +
+                            activeViewerSignatureField.h) *
+                            renderScale +
+                          6
                       }}
                     >
                       <button
                         className="pdf-template-designer__button pdf-template-designer__button--compact"
                         type="button"
-                        onClick={() => clearViewerSignature(activeViewerSignatureField.key)}
+                        onClick={() =>
+                          clearViewerSignature(activeViewerSignatureField.key)
+                        }
                       >
                         Clear signature
                       </button>
@@ -3921,7 +4846,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                         <button
                           className="pdf-template-designer__button pdf-template-designer__button--compact"
                           type="button"
-                          onClick={() => importSignatureFromSigWeb(activeViewerSignatureField.key)}
+                          onClick={() =>
+                            importSignatureFromSigWeb(
+                              activeViewerSignatureField.key
+                            )
+                          }
                         >
                           Use SigWeb
                         </button>
@@ -3940,87 +4869,118 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
   return (
     <div className={className} style={props.style} tabIndex={props.tabIndex}>
       {jsonError ? (
-        <div className="pdf-template-designer__alert">Template JSON is invalid. {jsonError}</div>
+        <div className="pdf-template-designer__alert">
+          Template JSON is invalid. {jsonError}
+        </div>
       ) : null}
       <div
         className={`pdf-template-designer__layout${
-          hasRightPanelSections ? "" : " pdf-template-designer__layout--no-properties"
-        }${hasSidebarSections ? "" : " pdf-template-designer__layout--no-sidebar"}`}
+          hasRightPanelSections
+            ? ""
+            : " pdf-template-designer__layout--no-properties"
+        }${
+          hasSidebarSections ? "" : " pdf-template-designer__layout--no-sidebar"
+        }`}
       >
         {hasSidebarSections ? (
-        <aside className="pdf-template-designer__sidebar">
-          {showPaletteSection ? (
-          <div>
-            <div className="pdf-template-designer__palette">
-              {visibleToolRailItems.map(item => {
-                return (
-                  <button
-                    key={`palette_${item.id}`}
-                    className={`pdf-template-designer__button pdf-template-designer__palette-tool${
-                      placementToolId === item.id ? " is-active" : ""
-                    }`}
-                    title={item.tooltip}
-                    aria-label={item.tooltip}
-                    data-tooltip={item.tooltip}
-                    onClick={() => handlePlacementSelect(item.id)}
-                    onDoubleClick={() => addToolFieldCentered(item)}
-                    draggable
-                    onDragStart={event => handlePaletteDragStart(event, item.id)}
-                    type="button"
-                  >
-                    <span className="pdf-template-designer__palette-tool-icon">{item.glyph}</span>
-                    <span className="pdf-template-designer__palette-tool-text">{item.label}</span>
-                  </button>
-                );
-              })}
-              {visibleToolRailItems.length === 0 ? (
-                <div className="pdf-template-designer__status">No palette tools are enabled in widget settings.</div>
-              ) : null}
-            </div>
-          </div>
-          ) : null}
+          <aside className="pdf-template-designer__sidebar">
+            {showPaletteSection ? (
+              <div>
+                <div className="pdf-template-designer__palette">
+                  {visibleToolRailItems.map((item) => {
+                    return (
+                      <button
+                        key={`palette_${item.id}`}
+                        className={`pdf-template-designer__button pdf-template-designer__palette-tool${
+                          placementToolId === item.id ? " is-active" : ""
+                        }`}
+                        title={item.tooltip}
+                        aria-label={item.tooltip}
+                        data-tooltip={item.tooltip}
+                        onClick={() => handlePlacementSelect(item.id)}
+                        onDoubleClick={() => addToolFieldCentered(item)}
+                        draggable
+                        onDragStart={(event) =>
+                          handlePaletteDragStart(event, item.id)
+                        }
+                        type="button"
+                      >
+                        <span className="pdf-template-designer__palette-tool-icon">
+                          {item.glyph}
+                        </span>
+                        <span className="pdf-template-designer__palette-tool-text">
+                          {item.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {visibleToolRailItems.length === 0 ? (
+                    <div className="pdf-template-designer__status">
+                      No palette tools are enabled in widget settings.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
-          {showPagesSection ? (
-          <div className="pdf-template-designer__sidebar-pages">
-            <div className="pdf-template-designer__section-title">Pages</div>
-            <div className="pdf-template-designer__thumb-list">
-              {Array.from({ length: pageCount }, (_, idx) => (
-                <button
-                  key={`thumb_${idx}`}
-                  type="button"
-                  className={`pdf-template-designer__thumb${idx === pageIndex ? " is-selected" : ""}`}
-                  onClick={() => setPageIndex(idx)}
-                >
-                  <div className="pdf-template-designer__thumb-canvas">
-                    {pageThumbs[idx] ? (
-                      <img src={pageThumbs[idx]} alt={`Page ${idx + 1}`} />
-                    ) : (
-                      <span className="pdf-template-designer__thumb-placeholder">
-                        {isBuildingThumbs ? "..." : idx + 1}
-                      </span>
-                    )}
-                  </div>
-                  <span>Page {idx + 1}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          ) : null}
-
-        </aside>
+            {showPagesSection ? (
+              <div className="pdf-template-designer__sidebar-pages">
+                <div className="pdf-template-designer__section-title">
+                  Pages
+                </div>
+                <div className="pdf-template-designer__thumb-list">
+                  {Array.from({ length: pageCount }, (_, idx) => (
+                    <button
+                      key={`thumb_${idx}`}
+                      type="button"
+                      className={`pdf-template-designer__thumb${
+                        idx === pageIndex ? " is-selected" : ""
+                      }`}
+                      onClick={() => setPageIndex(idx)}
+                    >
+                      <div className="pdf-template-designer__thumb-canvas">
+                        {pageThumbs[idx] ? (
+                          <img src={pageThumbs[idx]} alt={`Page ${idx + 1}`} />
+                        ) : (
+                          <span className="pdf-template-designer__thumb-placeholder">
+                            {isBuildingThumbs ? "..." : idx + 1}
+                          </span>
+                        )}
+                      </div>
+                      <span>Page {idx + 1}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </aside>
         ) : null}
 
         <section className="pdf-template-designer__canvas">
           <div className="pdf-template-designer__toolbar pdf-template-designer__toolbar--strip">
             <div className="pdf-template-designer__action-group">
-              <span className="pdf-template-designer__action-label">Template</span>
-              <button className="pdf-template-designer__button" type="button" onClick={handleReloadTemplateClick}>
+              <span className="pdf-template-designer__action-label">
+                Template
+              </span>
+              <button
+                className="pdf-template-designer__button"
+                type="button"
+                onClick={handleReloadTemplateClick}
+              >
                 Load
               </button>
-              <button className="pdf-template-designer__button" onClick={clearFields} type="button">
+              <button
+                className="pdf-template-designer__button"
+                onClick={clearFields}
+                type="button"
+              >
                 Reset
               </button>
-              <button className="pdf-template-designer__button" onClick={handleExportTemplateClick} type="button">
+              <button
+                className="pdf-template-designer__button"
+                onClick={handleExportTemplateClick}
+                type="button"
+              >
                 Export
               </button>
               <button
@@ -4047,7 +5007,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               </div>
               <button
                 className="pdf-template-designer__button"
-                onClick={() => setPageIndex(Math.min(pageCount - 1, pageIndex + 1))}
+                onClick={() =>
+                  setPageIndex(Math.min(pageCount - 1, pageIndex + 1))
+                }
                 type="button"
                 disabled={pageIndex >= pageCount - 1}
               >
@@ -4060,9 +5022,9 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   min={1}
                   max={pageCount}
                   value={pageJumpInput}
-                  onChange={event => setPageJumpInput(event.target.value)}
+                  onChange={(event) => setPageJumpInput(event.target.value)}
                   onBlur={applyPageJump}
-                  onKeyDown={event => {
+                  onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       applyPageJump();
                     }
@@ -4072,7 +5034,7 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
               <select
                 className="pdf-template-designer__select"
                 value={zoom}
-                onChange={event => setZoom(Number(event.target.value))}
+                onChange={(event) => setZoom(Number(event.target.value))}
               >
                 <option value={0.75}>75%</option>
                 <option value={1}>100%</option>
@@ -4083,17 +5045,27 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
 
             <div className="pdf-template-designer__action-group">
               <span className="pdf-template-designer__action-label">Edit</span>
-              <button className="pdf-template-designer__button" type="button" onClick={undo} disabled={undoDisabled}>
+              <button
+                className="pdf-template-designer__button"
+                type="button"
+                onClick={undo}
+                disabled={undoDisabled}
+              >
                 Undo
               </button>
-              <button className="pdf-template-designer__button" type="button" onClick={redo} disabled={redoDisabled}>
+              <button
+                className="pdf-template-designer__button"
+                type="button"
+                onClick={redo}
+                disabled={redoDisabled}
+              >
                 Redo
               </button>
               <label className="pdf-template-designer__toggle">
                 <input
                   type="checkbox"
                   checked={snapEnabled}
-                  onChange={event => setSnapEnabled(event.target.checked)}
+                  onChange={(event) => setSnapEnabled(event.target.checked)}
                 />
                 Snap
               </label>
@@ -4101,24 +5073,41 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
           </div>
           {selectedPlacementTool ? (
             <div className="pdf-template-designer__status">
-              Placing{" "}
-              <strong>{selectedPlacementTool.tooltip}</strong>
-              . Click the page to place.
+              Placing <strong>{selectedPlacementTool.tooltip}</strong>. Click
+              the page to place.
             </div>
           ) : showShortcutHints ? (
             <div className="pdf-template-designer__status">
-              Shortcuts: <code>Cmd/Ctrl+Z</code> undo, <code>Cmd/Ctrl+Shift+Z</code> redo, <code>Cmd/Ctrl+D</code> duplicate, <code>Del</code> delete, arrows nudge.
+              Shortcuts: <code>Cmd/Ctrl+Z</code> undo,{" "}
+              <code>Cmd/Ctrl+Shift+Z</code> redo, <code>Cmd/Ctrl+D</code>{" "}
+              duplicate, <code>Del</code> delete, arrows nudge.
             </div>
           ) : null}
 
           <div className="pdf-template-designer__viewer" ref={viewerRef}>
-            {!basePdfId ? <div className="pdf-template-designer__status">No base PDF linked.</div> : null}
-            {loadingPdf ? <div className="pdf-template-designer__status">Loading PDF...</div> : null}
-            {renderError ? <div className="pdf-template-designer__alert">{renderError}</div> : null}
+            {!basePdfId ? (
+              <div className="pdf-template-designer__status">
+                No base PDF linked.
+              </div>
+            ) : null}
+            {loadingPdf ? (
+              <div className="pdf-template-designer__status">
+                Loading PDF...
+              </div>
+            ) : null}
+            {renderError ? (
+              <div className="pdf-template-designer__alert">{renderError}</div>
+            ) : null}
             {hasRenderableDocument ? (
-              <div className="pdf-template-designer__page" style={{ width: renderWidth, height: renderHeight }}>
+              <div
+                className="pdf-template-designer__page"
+                style={{ width: renderWidth, height: renderHeight }}
+              >
                 {pdfDoc ? (
-                  <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />
+                  <canvas
+                    className="pdf-template-designer__canvas-surface"
+                    ref={canvasRef}
+                  />
                 ) : imageBackgroundUrl ? (
                   <img
                     className="pdf-template-designer__image-surface"
@@ -4131,8 +5120,14 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                 <div
                   className={`pdf-template-designer__overlay${
                     snapEnabled ? " pdf-template-designer__overlay--grid" : ""
-                  }${selectedPlacementTool ? " pdf-template-designer__overlay--placing" : ""}${
-                    guides.length > 0 ? " pdf-template-designer__overlay--guides" : ""
+                  }${
+                    selectedPlacementTool
+                      ? " pdf-template-designer__overlay--placing"
+                      : ""
+                  }${
+                    guides.length > 0
+                      ? " pdf-template-designer__overlay--guides"
+                      : ""
                   }`}
                   ref={overlayRef}
                   onPointerDown={handleOverlayPointerDown}
@@ -4140,7 +5135,11 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                   onDrop={handleOverlayDrop}
                   style={
                     snapEnabled
-                      ? { backgroundSize: `${SNAP_SIZE * renderScale}px ${SNAP_SIZE * renderScale}px` }
+                      ? {
+                          backgroundSize: `${SNAP_SIZE * renderScale}px ${
+                            SNAP_SIZE * renderScale
+                          }px`
+                        }
                       : undefined
                   }
                 >
@@ -4148,42 +5147,57 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
                     <div
                       key={`${guide.axis}_${guide.value}_${index}`}
                       className={`pdf-template-designer__guide pdf-template-designer__guide--${guide.axis}`}
-                      style={guide.axis === "x" ? { left: guide.value * renderScale } : { top: guide.value * renderScale }}
+                      style={
+                        guide.axis === "x"
+                          ? { left: guide.value * renderScale }
+                          : { top: guide.value * renderScale }
+                      }
                     />
                   ))}
-                  {fieldsOnPage.map(field => (
+                  {fieldsOnPage.map((field) => (
                     <div
                       key={field.id}
-                      className={`pdf-template-designer__field pdf-template-designer__field--${field.type}${
-                        selectedFieldId === field.id ? " is-selected" : ""
-                      }`}
+                      className={`pdf-template-designer__field pdf-template-designer__field--${
+                        field.type
+                      }${selectedFieldId === field.id ? " is-selected" : ""}`}
                       style={{
                         left: field.x * renderScale,
                         top: field.y * renderScale,
                         width: field.w * renderScale,
                         height: field.h * renderScale,
-                        backgroundColor:
-                          field.transparentBackground
-                            ? "rgba(255, 255, 255, 0.18)"
-                            : normalizeBackgroundColor(field.backgroundColor, DEFAULT_FIELD_BACKGROUND_COLOR),
-                        color: normalizeHexColor(field.textColor, DEFAULT_FIELD_TEXT_COLOR)
+                        backgroundColor: field.transparentBackground
+                          ? "rgba(255, 255, 255, 0.18)"
+                          : normalizeBackgroundColor(
+                              field.backgroundColor,
+                              DEFAULT_FIELD_BACKGROUND_COLOR
+                            ),
+                        color: normalizeHexColor(
+                          field.textColor,
+                          DEFAULT_FIELD_TEXT_COLOR
+                        )
                       }}
-                      onPointerDown={event => handleFieldPointerDown(event, field, "move")}
+                      onPointerDown={(event) =>
+                        handleFieldPointerDown(event, field, "move")
+                      }
                     >
                       <div className="pdf-template-designer__field-content">
                         <div className="pdf-template-designer__field-label">
                           {field.type === "multiVariableText"
-                            ? field.variablesSampleData || field.label || field.key
+                            ? field.variablesSampleData ||
+                              field.label ||
+                              field.key
                             : field.showLabel
                             ? field.label || field.key
                             : selectedFieldId === field.id
-                              ? "(label hidden)"
-                              : ""}
+                            ? "(label hidden)"
+                            : ""}
                         </div>
                       </div>
                       <div
                         className="pdf-template-designer__resize-handle"
-                        onPointerDown={event => handleFieldPointerDown(event, field, "resize")}
+                        onPointerDown={(event) =>
+                          handleFieldPointerDown(event, field, "resize")
+                        }
                       />
                     </div>
                   ))}
@@ -4196,624 +5210,928 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
         {hasRightPanelSections ? (
           <aside className="pdf-template-designer__properties">
             {showFieldsSection ? (
-            <div>
-              <div className="pdf-template-designer__section-title">Field list</div>
-              <div className="pdf-template-designer__field-list">
-                {fields.length === 0 ? (
-                  <div className="pdf-template-designer__status">No fields yet.</div>
-                ) : (
-                  fields.map(field => (
-                    <button
-                      key={field.id}
-                      className={`pdf-template-designer__field-pill${
-                        selectedFieldId === field.id ? " is-selected" : ""
-                      }${fieldListDropTargetId === field.id ? " is-drop-target" : ""}`}
-                      type="button"
-                      onClick={() => setSelectedFieldId(field.id)}
-                      draggable
-                      onDragStart={event => {
-                        event.dataTransfer.effectAllowed = "move";
-                        setDraggedFieldListItemId(field.id);
-                        setFieldListDropTargetId(field.id);
-                      }}
-                      onDragOver={event => {
-                        event.preventDefault();
-                        if (!draggedFieldListItemId) {
-                          return;
-                        }
-                        if (fieldListDropTargetId !== field.id) {
+              <div>
+                <div className="pdf-template-designer__section-title">
+                  Field list
+                </div>
+                <div className="pdf-template-designer__field-list">
+                  {fields.length === 0 ? (
+                    <div className="pdf-template-designer__status">
+                      No fields yet.
+                    </div>
+                  ) : (
+                    fields.map((field) => (
+                      <button
+                        key={field.id}
+                        className={`pdf-template-designer__field-pill${
+                          selectedFieldId === field.id ? " is-selected" : ""
+                        }${
+                          fieldListDropTargetId === field.id
+                            ? " is-drop-target"
+                            : ""
+                        }`}
+                        type="button"
+                        onClick={() => setSelectedFieldId(field.id)}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          setDraggedFieldListItemId(field.id);
                           setFieldListDropTargetId(field.id);
-                        }
-                      }}
-                      onDrop={event => {
-                        event.preventDefault();
-                        if (draggedFieldListItemId) {
-                          reorderFieldListItem(draggedFieldListItemId, field.id);
-                        }
-                        handleFieldListDragEnd();
-                      }}
-                      onDragEnd={handleFieldListDragEnd}
-                    >
-                      <span className="pdf-template-designer__field-pill-main">
-                        <span className="pdf-template-designer__field-pill-label">{field.label || field.key}</span>
-                        <span className="pdf-template-designer__field-pill-key">{field.key}</span>
-                      </span>
-                      <span className="pdf-template-designer__field-pill-badges">
-                        <span className="pdf-template-designer__field-badge">{field.type}</span>
-                        <span className="pdf-template-designer__field-badge">P{field.page + 1}</span>
-                      </span>
-                    </button>
-                  ))
-                )}
+                        }}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          if (!draggedFieldListItemId) {
+                            return;
+                          }
+                          if (fieldListDropTargetId !== field.id) {
+                            setFieldListDropTargetId(field.id);
+                          }
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          if (draggedFieldListItemId) {
+                            reorderFieldListItem(
+                              draggedFieldListItemId,
+                              field.id
+                            );
+                          }
+                          handleFieldListDragEnd();
+                        }}
+                        onDragEnd={handleFieldListDragEnd}
+                      >
+                        <span className="pdf-template-designer__field-pill-main">
+                          <span className="pdf-template-designer__field-pill-label">
+                            {field.label || field.key}
+                          </span>
+                          <span className="pdf-template-designer__field-pill-key">
+                            {field.key}
+                          </span>
+                        </span>
+                        <span className="pdf-template-designer__field-pill-badges">
+                          <span className="pdf-template-designer__field-badge">
+                            {field.type}
+                          </span>
+                          <span className="pdf-template-designer__field-badge">
+                            P{field.page + 1}
+                          </span>
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {fields.length > 1 ? (
+                  <div className="pdf-template-designer__status">
+                    Drag items to reorder.
+                  </div>
+                ) : null}
               </div>
-              {fields.length > 1 ? <div className="pdf-template-designer__status">Drag items to reorder.</div> : null}
-            </div>
             ) : null}
 
             {showFieldProperties ? (
-            <div className="pdf-template-designer__inspector">
-            <div className="pdf-template-designer__inspector-header">
-              <button
-                type="button"
-                className="pdf-template-designer__inspector-nav"
-                onClick={duplicateSelectedField}
-                disabled={!selectedField || !showPropertyDuplicateAction}
-                title="Duplicate selected field"
-              >
-                ≡
-              </button>
-              <div className="pdf-template-designer__inspector-title">Edit Field</div>
-              <button
-                type="button"
-                className="pdf-template-designer__inspector-nav"
-                onClick={() => setSelectedFieldId(null)}
-                title="Clear selection"
-              >
-                →
-              </button>
-            </div>
-
-            {selectedField ? (
-              hasVisibleFieldPropertyControls ? (
-              <div className="pdf-template-designer__inspector-body">
-                {(showPropertyType || showPropertyKey) ? (
-                <div className="pdf-template-designer__inspector-grid-two">
-                  {showPropertyType ? (
-                  <div>
-                    <div className="pdf-template-designer__label">Type</div>
-                    <select
-                      className="pdf-template-designer__select"
-                      value={selectedField.type}
-                      onChange={event => {
-                        const nextType = event.target.value as FieldType;
-                        const nextChanges: Partial<TemplateField> = { type: nextType };
-                        if (nextType === "select" || nextType === "radio") {
-                          const nextOptions =
-                            selectedField.options.length > 0 ? selectedField.options : defaultOptionsForFieldType(nextType);
-                          nextChanges.options = [...nextOptions];
-                        }
-                        if (nextType === "date") {
-                          nextChanges.format = normalizeFieldFormat("date", selectedField.format);
-                        }
-                        if (!supportsTransparentBackground(nextType)) {
-                          nextChanges.transparentBackground = false;
-                        }
-                        nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
-                        updateField(selectedField.id, nextChanges);
-                      }}
-                    >
-                      <option value="text">Text</option>
-                      <option value="multiVariableText">Multi-Variable Text</option>
-                      <option value="checkbox">Checkbox</option>
-                      <option value="date">Date</option>
-                      <option value="signature">Signature</option>
-                      <option value="select">Select</option>
-                      <option value="radio">Radio</option>
-                      <option value="image">Image</option>
-                    </select>
-                  </div>
-                  ) : null}
-                  {showPropertyKey ? (
-                  <div>
-                    <div className="pdf-template-designer__label">Key</div>
-                    {keyInputState.mode === "dropdown" ? (
-                      <select
-                        className="pdf-template-designer__select"
-                        value={selectedField.key}
-                        onChange={event => {
-                          const nextKey = event.target.value.trim();
-                          if (!nextKey) {
-                            return;
-                          }
-                          const selectedOption = keyInputState.options.find(option => option.value === nextKey);
-                          const mappedType = mapDataTypeToFieldType(selectedOption?.dataType);
-                          const mappedDateFormat = mapDataTypeToDateFormat(selectedOption?.dataType);
-                          const nextChanges: Partial<TemplateField> = mappedType
-                            ? { key: nextKey, type: mappedType }
-                            : { key: nextKey };
-                          const nextType = mappedType || selectedField.type;
-                          if ((nextType === "select" || nextType === "radio") && isEnumerationKeyOption(selectedOption)) {
-                            const enumOptions = normalizeOptionStrings(selectedOption?.options);
-                            nextChanges.options =
-                              enumOptions.length > 0 ? enumOptions : defaultOptionsForFieldType(nextType);
-                          }
-                          if (nextType === "date") {
-                            nextChanges.format = normalizeFieldFormat("date", mappedDateFormat || selectedField.format);
-                          }
-                          if (!supportsTransparentBackground(nextType)) {
-                            nextChanges.transparentBackground = false;
-                          }
-                          if (mappedType) {
-                            nextChanges.optionsOrientation = defaultOptionsOrientationForFieldType(nextType);
-                          }
-                          updateField(selectedField.id, nextChanges);
-                        }}
-                      >
-                        {selectedFieldKeyOptions.length === 0 ? (
-                          <option value={selectedField.key}>{selectedField.key || "No key options"}</option>
-                        ) : null}
-                        {selectedFieldKeyOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.dataType ? `${option.label} (${option.dataType})` : option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className="pdf-template-designer__input"
-                        value={selectedField.key}
-                        onChange={event => {
-                          const nextKey = event.target.value.trim();
-                          if (!nextKey) {
-                            return;
-                          }
-                          updateField(selectedField.id, { key: nextKey });
-                        }}
-                      />
-                    )}
-                    {keyInputState.loading ? (
-                      <div className="pdf-template-designer__status">Loading key options...</div>
-                    ) : null}
-                    {keyInputState.error ? (
-                      <div className="pdf-template-designer__alert">{keyInputState.error}</div>
-                    ) : null}
-                  </div>
-                  ) : null}
-                </div>
-                ) : null}
-
-                {(showPropertyShowLabel || showPropertyRequired || selectedFieldSupportsTransparentBackground) ? (
-                <div className="pdf-template-designer__inspector-checks">
-                  {showPropertyShowLabel ? (
-                  <label className="pdf-template-designer__toggle">
-                    <input
-                      type="checkbox"
-                      checked={selectedField.showLabel}
-                      onChange={event => updateField(selectedField.id, { showLabel: event.target.checked })}
-                    />
-                    Show label
-                  </label>
-                  ) : null}
-                  {showPropertyRequired ? (
-                  <label className="pdf-template-designer__toggle">
-                    <input
-                      type="checkbox"
-                      checked={selectedField.required}
-                      onChange={event => updateField(selectedField.id, { required: event.target.checked })}
-                    />
-                    Required
-                  </label>
-                  ) : null}
-                  {selectedFieldSupportsTransparentBackground ? (
-                  <label className="pdf-template-designer__toggle">
-                    <input
-                      type="checkbox"
-                      checked={selectedField.transparentBackground}
-                      onChange={event => updateField(selectedField.id, { transparentBackground: event.target.checked })}
-                    />
-                    Transparent background
-                  </label>
-                  ) : null}
-                </div>
-                ) : null}
-
-                {showPropertyLabel ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div>
-                    <div className="pdf-template-designer__label">Label</div>
-                    <input
-                      className="pdf-template-designer__input"
-                      value={selectedField.label}
-                      onChange={event => updateField(selectedField.id, { label: event.target.value })}
-                    />
-                  </div>
-                  {selectedField.showLabel ? (
-                  <div>
-                    <div className="pdf-template-designer__label">Label orientation</div>
-                    <select
-                      className="pdf-template-designer__select"
-                      value={selectedField.labelOrientation}
-                      onChange={event =>
-                        updateField(selectedField.id, {
-                          labelOrientation: isFieldOrientation(event.target.value) ? event.target.value : "horizontal"
-                        })
-                      }
-                    >
-                      <option value="horizontal">Horizontal (inline)</option>
-                      <option value="vertical">Vertical (stacked)</option>
-                    </select>
-                  </div>
-                  ) : (
-                  <div className="pdf-template-designer__status">Label is hidden in output for this field.</div>
-                  )}
-                </div>
-                ) : null}
-
-                {showPropertyAlignment ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__label">Align</div>
-                  <div className="pdf-template-designer__align-group">
-                    <button
-                      type="button"
-                      className={`pdf-template-designer__align-btn${selectedField.align === "left" ? " is-active" : ""}`}
-                      onClick={() => updateField(selectedField.id, { align: "left" })}
-                    >
-                      L
-                    </button>
-                    <button
-                      type="button"
-                      className={`pdf-template-designer__align-btn${selectedField.align === "center" ? " is-active" : ""}`}
-                      onClick={() => updateField(selectedField.id, { align: "center" })}
-                    >
-                      C
-                    </button>
-                    <button
-                      type="button"
-                      className={`pdf-template-designer__align-btn${selectedField.align === "right" ? " is-active" : ""}`}
-                      onClick={() => updateField(selectedField.id, { align: "right" })}
-                    >
-                      R
-                    </button>
-                  </div>
-                </div>
-                ) : null}
-
-                {(showPropertyPosition || showPropertySize || showPropertyPage) ? (
-                <div className="pdf-template-designer__inspector-section">
-                  {showPropertyPosition ? (
-                  <div className="pdf-template-designer__inspector-grid-two">
-                    <div>
-                      <div className="pdf-template-designer__label">X</div>
-                      <input
-                        className="pdf-template-designer__input"
-                        type="number"
-                        value={selectedField.x}
-                        onChange={event => updateField(selectedField.id, { x: toNumber(event.target.value, selectedField.x) })}
-                      />
-                    </div>
-                    <div>
-                      <div className="pdf-template-designer__label">Y</div>
-                      <input
-                        className="pdf-template-designer__input"
-                        type="number"
-                        value={selectedField.y}
-                        onChange={event => updateField(selectedField.id, { y: toNumber(event.target.value, selectedField.y) })}
-                      />
-                    </div>
-                  </div>
-                  ) : null}
-                  {showPropertySize ? (
-                  <div className="pdf-template-designer__inspector-grid-two">
-                    <div>
-                      <div className="pdf-template-designer__label">Width</div>
-                      <input
-                        className="pdf-template-designer__input"
-                        type="number"
-                        value={selectedField.w}
-                        onChange={event => updateField(selectedField.id, { w: toNumber(event.target.value, selectedField.w) })}
-                      />
-                    </div>
-                    <div>
-                      <div className="pdf-template-designer__label">Height</div>
-                      <input
-                        className="pdf-template-designer__input"
-                        type="number"
-                        value={selectedField.h}
-                        onChange={event => updateField(selectedField.id, { h: toNumber(event.target.value, selectedField.h) })}
-                      />
-                    </div>
-                  </div>
-                  ) : null}
-                  {showPropertyPage ? (
-                  <div>
-                    <div className="pdf-template-designer__label">Page</div>
-                    <input
-                      className="pdf-template-designer__input"
-                      type="number"
-                      min={1}
-                      max={pageCount}
-                      value={selectedField.page + 1}
-                      onChange={event => {
-                        const next = clamp(Math.floor(toNumber(event.target.value, 1)), 1, pageCount);
-                        updateField(selectedField.id, { page: next - 1 });
-                      }}
-                    />
-                  </div>
-                  ) : null}
-                </div>
-                ) : null}
-
-                {showPropertyFontSize ? (
-                <div className="pdf-template-designer__inspector-section">
-                  {showPropertyFontSize ? (
-                  <div className="pdf-template-designer__inspector-grid-two">
-                    <div>
-                      <div className="pdf-template-designer__label">Font</div>
-                      <input className="pdf-template-designer__input" value="Roboto" disabled />
-                    </div>
-                    <div>
-                      <div className="pdf-template-designer__label">Size</div>
-                      <input
-                        className="pdf-template-designer__input"
-                        type="number"
-                        min={6}
-                        value={selectedField.fontSize}
-                        onChange={event =>
-                          updateField(selectedField.id, { fontSize: toNumber(event.target.value, selectedField.fontSize) })
-                        }
-                      />
-                    </div>
-                  </div>
-                  ) : null}
-                </div>
-                ) : null}
-
-                {selectedFieldSupportsColorStyling ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__inspector-grid-two">
-                    <div>
-                      <div className="pdf-template-designer__label">Text Color</div>
-                      <div className="pdf-template-designer__color-row">
-                        <input
-                          className="pdf-template-designer__color-input"
-                          type="color"
-                          value={selectedFieldTextColorPickerValue}
-                          onChange={event => updateField(selectedField.id, { textColor: normalizeHexColor(event.target.value, DEFAULT_FIELD_TEXT_COLOR) })}
-                        />
-                        <input
-                          className="pdf-template-designer__input"
-                          value={selectedField.textColor}
-                          onChange={event => updateField(selectedField.id, { textColor: normalizeHexColor(event.target.value, selectedField.textColor || DEFAULT_FIELD_TEXT_COLOR) })}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="pdf-template-designer__label">Background Color</div>
-                      <div className="pdf-template-designer__color-row">
-                        <input
-                          className="pdf-template-designer__color-input"
-                          type="color"
-                          value={selectedFieldBackgroundColorPickerValue}
-                          disabled={selectedField.transparentBackground}
-                          onChange={event =>
-                            updateField(selectedField.id, {
-                              transparentBackground: false,
-                              backgroundColor: normalizeHexColor(event.target.value, DEFAULT_FIELD_BACKGROUND_COLOR)
-                            })
-                          }
-                        />
-                        <input
-                          className="pdf-template-designer__input"
-                          value={selectedField.transparentBackground ? "transparent" : selectedField.backgroundColor}
-                          onChange={event => {
-                            const raw = event.target.value.trim();
-                            if (!raw) {
-                              updateField(selectedField.id, {
-                                transparentBackground: true,
-                                backgroundColor: DEFAULT_FIELD_BACKGROUND_COLOR
-                              });
-                              return;
-                            }
-                            if (raw.toLowerCase() === "transparent") {
-                              updateField(selectedField.id, {
-                                transparentBackground: true,
-                                backgroundColor: DEFAULT_FIELD_BACKGROUND_COLOR
-                              });
-                              return;
-                            }
-                            updateField(selectedField.id, {
-                              transparentBackground: false,
-                              backgroundColor: normalizeHexColor(raw, selectedField.backgroundColor || DEFAULT_FIELD_BACKGROUND_COLOR)
-                            });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                ) : null}
-
-                {selectedField.type === "date" ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__label">Format</div>
-                  <select
-                    className="pdf-template-designer__select"
-                    value={selectedFieldDateFormat}
-                    onChange={event =>
-                      updateField(selectedField.id, {
-                        format: normalizeFieldFormat("date", event.target.value)
-                      })
-                    }
+              <div className="pdf-template-designer__inspector">
+                <div className="pdf-template-designer__inspector-header">
+                  <button
+                    type="button"
+                    className="pdf-template-designer__inspector-nav"
+                    onClick={duplicateSelectedField}
+                    disabled={!selectedField || !showPropertyDuplicateAction}
+                    title="Duplicate selected field"
                   >
-                    {selectedFieldHasCustomDateFormat ? (
-                      <option value={selectedFieldDateFormat}>{selectedFieldDateFormat} (Custom)</option>
-                    ) : null}
-                    {DATE_FIELD_FORMAT_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                ) : null}
-
-                {selectedField.type === "multiVariableText" ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__label">Variables Sample Data</div>
-                  <textarea
-                    className="pdf-template-designer__input pdf-template-designer__textarea"
-                    rows={4}
-                    value={selectedField.variablesSampleData}
-                    onChange={event => updateField(selectedField.id, { variablesSampleData: event.target.value })}
-                    placeholder="For example: {ClientFirstName} {ClientLastName}"
-                  />
-                  <div className="pdf-template-designer__status">
-                    Add variables with curly brackets, for example <code>{"{name}"}</code>.
+                    ≡
+                  </button>
+                  <div className="pdf-template-designer__inspector-title">
+                    Edit Field
                   </div>
+                  <button
+                    type="button"
+                    className="pdf-template-designer__inspector-nav"
+                    onClick={() => setSelectedFieldId(null)}
+                    title="Clear selection"
+                  >
+                    →
+                  </button>
                 </div>
-                ) : null}
 
-                {(selectedField.type === "select" || selectedField.type === "radio") ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__label">Options</div>
-                  {selectedField.type === "radio" ? (
-                    <div>
-                      <div className="pdf-template-designer__label">Options orientation</div>
-                      <select
-                        className="pdf-template-designer__select"
-                        value={selectedField.optionsOrientation}
-                        onChange={event =>
-                          updateField(selectedField.id, {
-                            optionsOrientation: isFieldOrientation(event.target.value) ? event.target.value : "vertical"
-                          })
-                        }
-                      >
-                        <option value="vertical">Vertical</option>
-                        <option value="horizontal">Horizontal</option>
-                      </select>
-                    </div>
-                  ) : null}
-                  {selectedFieldIsEnumBound ? (
-                    <div className="pdf-template-designer__status">
-                      Options are provided by the selected enumeration key and cannot be edited here.
-                    </div>
-                  ) : (
-                    <div className="pdf-template-designer__option-add">
-                      <input
-                        className="pdf-template-designer__input"
-                        value={optionDraft}
-                        onChange={event => setOptionDraft(event.target.value)}
-                        onKeyDown={event => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            addOptionToSelectedField();
-                          }
-                        }}
-                        placeholder="Enter an option"
-                      />
-                      <button
-                        className="pdf-template-designer__button"
-                        type="button"
-                        onClick={addOptionToSelectedField}
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
-                  <div className="pdf-template-designer__option-list">
-                    {selectedFieldEffectiveOptions.length === 0 ? (
-                      <div className="pdf-template-designer__status">No options configured.</div>
-                    ) : (
-                      selectedFieldEffectiveOptions.map((option, index) => (
-                        <div className="pdf-template-designer__option-row" key={`${option}_${index}`}>
-                          <input
-                            className="pdf-template-designer__input"
-                            value={option}
-                            disabled={selectedFieldIsEnumBound}
-                            onChange={event => updateSelectedFieldOption(index, event.target.value)}
+                {selectedField ? (
+                  hasVisibleFieldPropertyControls ? (
+                    <div className="pdf-template-designer__inspector-body">
+                      {showPropertyType || showPropertyKey ? (
+                        <div className="pdf-template-designer__inspector-grid-two">
+                          {showPropertyType ? (
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Type
+                              </div>
+                              <select
+                                className="pdf-template-designer__select"
+                                value={selectedField.type}
+                                onChange={(event) => {
+                                  const nextType = event.target
+                                    .value as FieldType;
+                                  const nextChanges: Partial<TemplateField> = {
+                                    type: nextType
+                                  };
+                                  if (
+                                    nextType === "select" ||
+                                    nextType === "radio"
+                                  ) {
+                                    const nextOptions =
+                                      selectedField.options.length > 0
+                                        ? selectedField.options
+                                        : defaultOptionsForFieldType(nextType);
+                                    nextChanges.options = [...nextOptions];
+                                  }
+                                  if (nextType === "date") {
+                                    nextChanges.format = normalizeFieldFormat(
+                                      "date",
+                                      selectedField.format
+                                    );
+                                  }
+                                  if (
+                                    !supportsTransparentBackground(nextType)
+                                  ) {
+                                    nextChanges.transparentBackground = false;
+                                  }
+                                  nextChanges.optionsOrientation =
+                                    defaultOptionsOrientationForFieldType(
+                                      nextType
+                                    );
+                                  updateField(selectedField.id, nextChanges);
+                                }}
+                              >
+                                <option value="text">Text</option>
+                                <option value="multiVariableText">
+                                  Multi-Variable Text
+                                </option>
+                                <option value="checkbox">Checkbox</option>
+                                <option value="date">Date</option>
+                                <option value="signature">Signature</option>
+                                <option value="select">Select</option>
+                                <option value="radio">Radio</option>
+                                <option value="image">Image</option>
+                              </select>
+                            </div>
+                          ) : null}
+                          {showPropertyKey ? (
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Key
+                              </div>
+                              {keyInputState.mode === "dropdown" ? (
+                                <select
+                                  className="pdf-template-designer__select"
+                                  value={selectedField.key}
+                                  onChange={(event) => {
+                                    const nextKey = event.target.value.trim();
+                                    if (!nextKey) {
+                                      return;
+                                    }
+                                    const selectedOption =
+                                      keyInputState.options.find(
+                                        (option) => option.value === nextKey
+                                      );
+                                    const mappedType = mapDataTypeToFieldType(
+                                      selectedOption?.dataType
+                                    );
+                                    const mappedDateFormat =
+                                      mapDataTypeToDateFormat(
+                                        selectedOption?.dataType
+                                      );
+                                    const nextChanges: Partial<TemplateField> =
+                                      mappedType
+                                        ? { key: nextKey, type: mappedType }
+                                        : { key: nextKey };
+                                    const nextType =
+                                      mappedType || selectedField.type;
+                                    if (
+                                      (nextType === "select" ||
+                                        nextType === "radio") &&
+                                      isEnumerationKeyOption(selectedOption)
+                                    ) {
+                                      const enumOptions =
+                                        normalizeOptionStrings(
+                                          selectedOption?.options
+                                        );
+                                      nextChanges.options =
+                                        enumOptions.length > 0
+                                          ? enumOptions
+                                          : defaultOptionsForFieldType(
+                                              nextType
+                                            );
+                                    }
+                                    if (nextType === "date") {
+                                      nextChanges.format = normalizeFieldFormat(
+                                        "date",
+                                        mappedDateFormat || selectedField.format
+                                      );
+                                    }
+                                    if (
+                                      !supportsTransparentBackground(nextType)
+                                    ) {
+                                      nextChanges.transparentBackground = false;
+                                    }
+                                    if (mappedType) {
+                                      nextChanges.optionsOrientation =
+                                        defaultOptionsOrientationForFieldType(
+                                          nextType
+                                        );
+                                    }
+                                    updateField(selectedField.id, nextChanges);
+                                  }}
+                                >
+                                  {selectedFieldKeyOptions.length === 0 ? (
+                                    <option value={selectedField.key}>
+                                      {selectedField.key || "No key options"}
+                                    </option>
+                                  ) : null}
+                                  {selectedFieldKeyOptions.map((option) => (
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.dataType
+                                        ? `${option.label} (${option.dataType})`
+                                        : option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  className="pdf-template-designer__input"
+                                  value={selectedField.key}
+                                  onChange={(event) => {
+                                    const nextKey = event.target.value.trim();
+                                    if (!nextKey) {
+                                      return;
+                                    }
+                                    updateField(selectedField.id, {
+                                      key: nextKey
+                                    });
+                                  }}
+                                />
+                              )}
+                              {keyInputState.loading ? (
+                                <div className="pdf-template-designer__status">
+                                  Loading key options...
+                                </div>
+                              ) : null}
+                              {keyInputState.error ? (
+                                <div className="pdf-template-designer__alert">
+                                  {keyInputState.error}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {showPropertyShowLabel ||
+                      showPropertyRequired ||
+                      selectedFieldSupportsTransparentBackground ? (
+                        <div className="pdf-template-designer__inspector-checks">
+                          {showPropertyShowLabel ? (
+                            <label className="pdf-template-designer__toggle">
+                              <input
+                                type="checkbox"
+                                checked={selectedField.showLabel}
+                                onChange={(event) =>
+                                  updateField(selectedField.id, {
+                                    showLabel: event.target.checked
+                                  })
+                                }
+                              />
+                              Show label
+                            </label>
+                          ) : null}
+                          {showPropertyRequired ? (
+                            <label className="pdf-template-designer__toggle">
+                              <input
+                                type="checkbox"
+                                checked={selectedField.required}
+                                onChange={(event) =>
+                                  updateField(selectedField.id, {
+                                    required: event.target.checked
+                                  })
+                                }
+                              />
+                              Required
+                            </label>
+                          ) : null}
+                          {selectedFieldSupportsTransparentBackground ? (
+                            <label className="pdf-template-designer__toggle">
+                              <input
+                                type="checkbox"
+                                checked={selectedField.transparentBackground}
+                                onChange={(event) =>
+                                  updateField(selectedField.id, {
+                                    transparentBackground: event.target.checked
+                                  })
+                                }
+                              />
+                              Transparent background
+                            </label>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {showPropertyLabel ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div>
+                            <div className="pdf-template-designer__label">
+                              Label
+                            </div>
+                            <input
+                              className="pdf-template-designer__input"
+                              value={selectedField.label}
+                              onChange={(event) =>
+                                updateField(selectedField.id, {
+                                  label: event.target.value
+                                })
+                              }
+                            />
+                          </div>
+                          {selectedField.showLabel ? (
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Label orientation
+                              </div>
+                              <select
+                                className="pdf-template-designer__select"
+                                value={selectedField.labelOrientation}
+                                onChange={(event) =>
+                                  updateField(selectedField.id, {
+                                    labelOrientation: isFieldOrientation(
+                                      event.target.value
+                                    )
+                                      ? event.target.value
+                                      : "horizontal"
+                                  })
+                                }
+                              >
+                                <option value="horizontal">
+                                  Horizontal (inline)
+                                </option>
+                                <option value="vertical">
+                                  Vertical (stacked)
+                                </option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="pdf-template-designer__status">
+                              Label is hidden in output for this field.
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {showPropertyAlignment ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__label">
+                            Align
+                          </div>
+                          <div className="pdf-template-designer__align-group">
+                            <button
+                              type="button"
+                              className={`pdf-template-designer__align-btn${
+                                selectedField.align === "left"
+                                  ? " is-active"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                updateField(selectedField.id, { align: "left" })
+                              }
+                            >
+                              L
+                            </button>
+                            <button
+                              type="button"
+                              className={`pdf-template-designer__align-btn${
+                                selectedField.align === "center"
+                                  ? " is-active"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                updateField(selectedField.id, {
+                                  align: "center"
+                                })
+                              }
+                            >
+                              C
+                            </button>
+                            <button
+                              type="button"
+                              className={`pdf-template-designer__align-btn${
+                                selectedField.align === "right"
+                                  ? " is-active"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                updateField(selectedField.id, {
+                                  align: "right"
+                                })
+                              }
+                            >
+                              R
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {showPropertyPosition ||
+                      showPropertySize ||
+                      showPropertyPage ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          {showPropertyPosition ? (
+                            <div className="pdf-template-designer__inspector-grid-two">
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  X
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  type="number"
+                                  value={selectedField.x}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      x: toNumber(
+                                        event.target.value,
+                                        selectedField.x
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  Y
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  type="number"
+                                  value={selectedField.y}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      y: toNumber(
+                                        event.target.value,
+                                        selectedField.y
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          {showPropertySize ? (
+                            <div className="pdf-template-designer__inspector-grid-two">
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  Width
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  type="number"
+                                  value={selectedField.w}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      w: toNumber(
+                                        event.target.value,
+                                        selectedField.w
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  Height
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  type="number"
+                                  value={selectedField.h}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      h: toNumber(
+                                        event.target.value,
+                                        selectedField.h
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          {showPropertyPage ? (
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Page
+                              </div>
+                              <input
+                                className="pdf-template-designer__input"
+                                type="number"
+                                min={1}
+                                max={pageCount}
+                                value={selectedField.page + 1}
+                                onChange={(event) => {
+                                  const next = clamp(
+                                    Math.floor(toNumber(event.target.value, 1)),
+                                    1,
+                                    pageCount
+                                  );
+                                  updateField(selectedField.id, {
+                                    page: next - 1
+                                  });
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {showPropertyFontSize ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          {showPropertyFontSize ? (
+                            <div className="pdf-template-designer__inspector-grid-two">
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  Font
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  value="Roboto"
+                                  disabled
+                                />
+                              </div>
+                              <div>
+                                <div className="pdf-template-designer__label">
+                                  Size
+                                </div>
+                                <input
+                                  className="pdf-template-designer__input"
+                                  type="number"
+                                  min={6}
+                                  value={selectedField.fontSize}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      fontSize: toNumber(
+                                        event.target.value,
+                                        selectedField.fontSize
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {selectedFieldSupportsColorStyling ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__inspector-grid-two">
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Text Color
+                              </div>
+                              <div className="pdf-template-designer__color-row">
+                                <input
+                                  className="pdf-template-designer__color-input"
+                                  type="color"
+                                  value={selectedFieldTextColorPickerValue}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      textColor: normalizeHexColor(
+                                        event.target.value,
+                                        DEFAULT_FIELD_TEXT_COLOR
+                                      )
+                                    })
+                                  }
+                                />
+                                <input
+                                  className="pdf-template-designer__input"
+                                  value={selectedField.textColor}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      textColor: normalizeHexColor(
+                                        event.target.value,
+                                        selectedField.textColor ||
+                                          DEFAULT_FIELD_TEXT_COLOR
+                                      )
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Background Color
+                              </div>
+                              <div className="pdf-template-designer__color-row">
+                                <input
+                                  className="pdf-template-designer__color-input"
+                                  type="color"
+                                  value={
+                                    selectedFieldBackgroundColorPickerValue
+                                  }
+                                  disabled={selectedField.transparentBackground}
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      transparentBackground: false,
+                                      backgroundColor: normalizeHexColor(
+                                        event.target.value,
+                                        DEFAULT_FIELD_BACKGROUND_COLOR
+                                      )
+                                    })
+                                  }
+                                />
+                                <input
+                                  className="pdf-template-designer__input"
+                                  value={
+                                    selectedField.transparentBackground
+                                      ? "transparent"
+                                      : selectedField.backgroundColor
+                                  }
+                                  onChange={(event) => {
+                                    const raw = event.target.value.trim();
+                                    if (!raw) {
+                                      updateField(selectedField.id, {
+                                        transparentBackground: true,
+                                        backgroundColor:
+                                          DEFAULT_FIELD_BACKGROUND_COLOR
+                                      });
+                                      return;
+                                    }
+                                    if (raw.toLowerCase() === "transparent") {
+                                      updateField(selectedField.id, {
+                                        transparentBackground: true,
+                                        backgroundColor:
+                                          DEFAULT_FIELD_BACKGROUND_COLOR
+                                      });
+                                      return;
+                                    }
+                                    updateField(selectedField.id, {
+                                      transparentBackground: false,
+                                      backgroundColor: normalizeHexColor(
+                                        raw,
+                                        selectedField.backgroundColor ||
+                                          DEFAULT_FIELD_BACKGROUND_COLOR
+                                      )
+                                    });
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedField.type === "date" ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__label">
+                            Format
+                          </div>
+                          <select
+                            className="pdf-template-designer__select"
+                            value={selectedFieldDateFormat}
+                            onChange={(event) =>
+                              updateField(selectedField.id, {
+                                format: normalizeFieldFormat(
+                                  "date",
+                                  event.target.value
+                                )
+                              })
+                            }
+                          >
+                            {selectedFieldHasCustomDateFormat ? (
+                              <option value={selectedFieldDateFormat}>
+                                {selectedFieldDateFormat} (Custom)
+                              </option>
+                            ) : null}
+                            {DATE_FIELD_FORMAT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
+
+                      {selectedField.type === "multiVariableText" ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__label">
+                            Variables Sample Data
+                          </div>
+                          <textarea
+                            className="pdf-template-designer__input pdf-template-designer__textarea"
+                            rows={4}
+                            value={selectedField.variablesSampleData}
+                            onChange={(event) =>
+                              updateField(selectedField.id, {
+                                variablesSampleData: event.target.value
+                              })
+                            }
+                            placeholder="For example: {ClientFirstName} {ClientLastName}"
                           />
-                          {!selectedFieldIsEnumBound ? (
+                          <div className="pdf-template-designer__status">
+                            Add variables with curly brackets, for example{" "}
+                            <code>{"{name}"}</code>.
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedField.type === "select" ||
+                      selectedField.type === "radio" ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__label">
+                            Options
+                          </div>
+                          {selectedField.type === "radio" ? (
+                            <div>
+                              <div className="pdf-template-designer__label">
+                                Options orientation
+                              </div>
+                              <select
+                                className="pdf-template-designer__select"
+                                value={selectedField.optionsOrientation}
+                                onChange={(event) =>
+                                  updateField(selectedField.id, {
+                                    optionsOrientation: isFieldOrientation(
+                                      event.target.value
+                                    )
+                                      ? event.target.value
+                                      : "vertical"
+                                  })
+                                }
+                              >
+                                <option value="vertical">Vertical</option>
+                                <option value="horizontal">Horizontal</option>
+                              </select>
+                            </div>
+                          ) : null}
+                          {selectedFieldIsEnumBound ? (
+                            <div className="pdf-template-designer__status">
+                              Options are provided by the selected enumeration
+                              key and cannot be edited here.
+                            </div>
+                          ) : (
+                            <div className="pdf-template-designer__option-add">
+                              <input
+                                className="pdf-template-designer__input"
+                                value={optionDraft}
+                                onChange={(event) =>
+                                  setOptionDraft(event.target.value)
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    addOptionToSelectedField();
+                                  }
+                                }}
+                                placeholder="Enter an option"
+                              />
+                              <button
+                                className="pdf-template-designer__button"
+                                type="button"
+                                onClick={addOptionToSelectedField}
+                              >
+                                +
+                              </button>
+                            </div>
+                          )}
+                          <div className="pdf-template-designer__option-list">
+                            {selectedFieldEffectiveOptions.length === 0 ? (
+                              <div className="pdf-template-designer__status">
+                                No options configured.
+                              </div>
+                            ) : (
+                              selectedFieldEffectiveOptions.map(
+                                (option, index) => (
+                                  <div
+                                    className="pdf-template-designer__option-row"
+                                    key={`${option}_${index}`}
+                                  >
+                                    <input
+                                      className="pdf-template-designer__input"
+                                      value={option}
+                                      disabled={selectedFieldIsEnumBound}
+                                      onChange={(event) =>
+                                        updateSelectedFieldOption(
+                                          index,
+                                          event.target.value
+                                        )
+                                      }
+                                    />
+                                    {!selectedFieldIsEnumBound ? (
+                                      <button
+                                        className="pdf-template-designer__button"
+                                        type="button"
+                                        onClick={() =>
+                                          removeSelectedFieldOption(index)
+                                        }
+                                      >
+                                        x
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                )
+                              )
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedField.type === "image" ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          <div className="pdf-template-designer__label">
+                            Image Source
+                          </div>
+                          {selectedFieldIsImageKeyBound ? (
+                            <div className="pdf-template-designer__status">
+                              Bound to key <code>{selectedField.key}</code>.
+                              Provide a base64 image value in Data JSON for this
+                              key.
+                            </div>
+                          ) : (
+                            <input
+                              className="pdf-template-designer__input"
+                              type="file"
+                              accept="image/*"
+                              onChange={handleSelectedFieldImageUpload}
+                            />
+                          )}
+                          {imageUploadError ? (
+                            <div className="pdf-template-designer__alert">
+                              {imageUploadError}
+                            </div>
+                          ) : null}
+                          <div className="pdf-template-designer__image-preview">
+                            {selectedFieldImagePreview ? (
+                              <img
+                                src={selectedFieldImagePreview}
+                                alt={
+                                  selectedField.label ||
+                                  selectedField.key ||
+                                  "Image preview"
+                                }
+                              />
+                            ) : (
+                              <div className="pdf-template-designer__status">
+                                No image selected.
+                              </div>
+                            )}
+                          </div>
+                          {!selectedFieldIsImageKeyBound ? (
                             <button
                               className="pdf-template-designer__button"
                               type="button"
-                              onClick={() => removeSelectedFieldOption(index)}
+                              onClick={clearSelectedFieldImage}
+                              disabled={
+                                !normalizeImageDataFromUnknown(
+                                  selectedField.imageDataUrl
+                                )
+                              }
                             >
-                              x
+                              Clear image
                             </button>
                           ) : null}
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-                ) : null}
+                      ) : null}
 
-                {selectedField.type === "image" ? (
-                <div className="pdf-template-designer__inspector-section">
-                  <div className="pdf-template-designer__label">Image Source</div>
-                  {selectedFieldIsImageKeyBound ? (
-                    <div className="pdf-template-designer__status">
-                      Bound to key <code>{selectedField.key}</code>. Provide a base64 image value in Data JSON for this key.
+                      {showPropertyDeleteAction ||
+                      showPropertyDuplicateAction ? (
+                        <div className="pdf-template-designer__inspector-actions">
+                          {showPropertyDuplicateAction ? (
+                            <button
+                              className="pdf-template-designer__button"
+                              onClick={duplicateSelectedField}
+                              type="button"
+                            >
+                              Duplicate field
+                            </button>
+                          ) : null}
+                          {showPropertyDeleteAction ? (
+                            <button
+                              className="pdf-template-designer__button"
+                              onClick={() => deleteField(selectedField.id)}
+                              type="button"
+                            >
+                              Delete field
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
-                    <input
-                      className="pdf-template-designer__input"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleSelectedFieldImageUpload}
-                    />
-                  )}
-                  {imageUploadError ? <div className="pdf-template-designer__alert">{imageUploadError}</div> : null}
-                  <div className="pdf-template-designer__image-preview">
-                    {selectedFieldImagePreview ? (
-                      <img src={selectedFieldImagePreview} alt={selectedField.label || selectedField.key || "Image preview"} />
-                    ) : (
-                      <div className="pdf-template-designer__status">No image selected.</div>
-                    )}
+                    <div className="pdf-template-designer__status">
+                      All field properties are hidden by widget configuration.
+                    </div>
+                  )
+                ) : (
+                  <div className="pdf-template-designer__status">
+                    Select a field to edit.
                   </div>
-                  {!selectedFieldIsImageKeyBound ? (
-                    <button
-                      className="pdf-template-designer__button"
-                      type="button"
-                      onClick={clearSelectedFieldImage}
-                      disabled={!normalizeImageDataFromUnknown(selectedField.imageDataUrl)}
-                    >
-                      Clear image
-                    </button>
-                  ) : null}
-                </div>
-                ) : null}
-
-                {showPropertyDeleteAction || showPropertyDuplicateAction ? (
-                <div className="pdf-template-designer__inspector-actions">
-                  {showPropertyDuplicateAction ? (
-                  <button
-                    className="pdf-template-designer__button"
-                    onClick={duplicateSelectedField}
-                    type="button"
-                  >
-                    Duplicate field
-                  </button>
-                  ) : null}
-                  {showPropertyDeleteAction ? (
-                  <button
-                    className="pdf-template-designer__button"
-                    onClick={() => deleteField(selectedField.id)}
-                    type="button"
-                  >
-                    Delete field
-                  </button>
-                  ) : null}
-                </div>
-                ) : null}
+                )}
               </div>
-              ) : (
-                <div className="pdf-template-designer__status">All field properties are hidden by widget configuration.</div>
-              )
-            ) : (
-              <div className="pdf-template-designer__status">Select a field to edit.</div>
-            )}
-            </div>
             ) : null}
           </aside>
         ) : null}
@@ -4821,4 +6139,3 @@ export default function PdfDesignerCore(props: PdfDesignerCoreProps): ReactEleme
     </div>
   );
 }
-

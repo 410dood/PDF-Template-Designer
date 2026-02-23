@@ -37,7 +37,7 @@
   - date-only patterns
   - time-only patterns
   - datetime patterns
-- Updated `Document.GenerateFlattenedPdfDelegate` with matching parser/formatter logic to keep behavior aligned.
+- Updated `Document.GenerateFlattenedPdfDelegate` with matching parser/formatter logic to keep behavior aligned (this was before the later thin-wrapper refactor noted in Unreleased).
 
 ## Initial Release
 
