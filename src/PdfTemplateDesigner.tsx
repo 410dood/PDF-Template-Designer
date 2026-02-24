@@ -63,7 +63,19 @@ export interface PdfDesignerCoreProps {
   showPropertyDuplicateAction?: boolean;
   showPropertyDeleteAction?: boolean;
   saveButtonText?: string;
-  viewMode?: "designer" | "viewer";
+  showCustomActionButton1?: boolean;
+  customActionButton1Text?: string;
+  customActionButton1Enabled?: boolean;
+  customActionButton1Action?: ActionValue;
+  showCustomActionButton2?: boolean;
+  customActionButton2Text?: string;
+  customActionButton2Enabled?: boolean;
+  customActionButton2Action?: ActionValue;
+  showCustomActionButton3?: boolean;
+  customActionButton3Text?: string;
+  customActionButton3Enabled?: boolean;
+  customActionButton3Action?: ActionValue;
+  viewMode?: "designer" | "viewer" | "readOnly";
   showPaletteToolText?: boolean;
   showPaletteToolMultiVariableText?: boolean;
   showPaletteToolSignature?: boolean;
@@ -96,7 +108,7 @@ type FieldType =
 type FieldAlign = "left" | "center" | "right";
 type FieldOrientation = "horizontal" | "vertical";
 type FieldKeySourceMode = "manual" | "datasource" | "json";
-type ViewMode = "designer" | "viewer";
+type ViewMode = "designer" | "viewer" | "readOnly";
 
 interface KeyOption {
   value: string;
@@ -566,7 +578,22 @@ function normalizeFieldFormat(type: FieldType, value: unknown): string {
 }
 
 function isViewMode(value: unknown): value is ViewMode {
-  return value === "designer" || value === "viewer";
+  return value === "designer" || value === "viewer" || value === "readOnly";
+}
+
+function normalizeViewMode(value: unknown): ViewMode {
+  if (isViewMode(value)) {
+    return value;
+  }
+
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (text === "readonly" || text === "read-only" || text === "read_only") {
+    return "readOnly";
+  }
+  if (text === "viewer") {
+    return "viewer";
+  }
+  return "designer";
 }
 
 function normalizeStatus(
@@ -2309,10 +2336,49 @@ export default function PdfDesignerCore(
     props.showPropertyDuplicateAction !== false;
   const showPropertyDeleteAction = props.showPropertyDeleteAction !== false;
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
-  const viewMode: ViewMode = isViewMode((props as any).viewMode)
-    ? ((props as any).viewMode as ViewMode)
-    : "designer";
+  const viewMode = normalizeViewMode((props as any).viewMode);
   const isViewerMode = viewMode === "viewer";
+  const isReadOnlyMode = viewMode === "readOnly";
+  const customActionButtons = useMemo(
+    () =>
+      [
+        {
+          key: "custom-action-1",
+          visible: props.showCustomActionButton1 === true,
+          text: (props.customActionButton1Text || "").trim() || "Action 1",
+          enabled: props.customActionButton1Enabled !== false,
+          action: props.customActionButton1Action
+        },
+        {
+          key: "custom-action-2",
+          visible: props.showCustomActionButton2 === true,
+          text: (props.customActionButton2Text || "").trim() || "Action 2",
+          enabled: props.customActionButton2Enabled !== false,
+          action: props.customActionButton2Action
+        },
+        {
+          key: "custom-action-3",
+          visible: props.showCustomActionButton3 === true,
+          text: (props.customActionButton3Text || "").trim() || "Action 3",
+          enabled: props.customActionButton3Enabled !== false,
+          action: props.customActionButton3Action
+        }
+      ].filter((item) => item.visible),
+    [
+      props.showCustomActionButton1,
+      props.customActionButton1Text,
+      props.customActionButton1Enabled,
+      props.customActionButton1Action,
+      props.showCustomActionButton2,
+      props.customActionButton2Text,
+      props.customActionButton2Enabled,
+      props.customActionButton2Action,
+      props.showCustomActionButton3,
+      props.customActionButton3Text,
+      props.customActionButton3Enabled,
+      props.customActionButton3Action
+    ]
+  );
   const hasSidebarSections = showPaletteSection || showPagesSection;
   const hasRightPanelSections = showFieldProperties || showFieldsSection;
   const paletteToolVisibilityById = useMemo(() => {
@@ -3293,7 +3359,7 @@ export default function PdfDesignerCore(
             : defaultOptionsOrientationForFieldType(type),
         showLabel: overrides?.showLabel ?? true,
         transparentBackground: supportsTransparentBackground(type)
-          ? Boolean(overrides?.transparentBackground)
+          ? overrides?.transparentBackground ?? true
           : false,
         textColor: normalizeHexColor(
           overrides?.textColor,
@@ -3959,7 +4025,7 @@ export default function PdfDesignerCore(
   );
 
   useEffect(() => {
-    if (isViewerMode || !enableKeyboardShortcuts) {
+    if (isViewerMode || isReadOnlyMode || !enableKeyboardShortcuts) {
       return;
     }
 
@@ -4037,6 +4103,7 @@ export default function PdfDesignerCore(
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     isViewerMode,
+    isReadOnlyMode,
     enableKeyboardShortcuts,
     undo,
     redo,
@@ -4046,6 +4113,9 @@ export default function PdfDesignerCore(
   ]);
 
   const handleSaveClick = useCallback(() => {
+    if (isReadOnlyMode) {
+      return;
+    }
     if (isViewerMode) {
       viewerFieldValuesDirtyRef.current = false;
       commitDataJson(viewerFieldValues, {
@@ -4058,10 +4128,16 @@ export default function PdfDesignerCore(
       runSaveAction: true,
       runOnChangeAction: false
     });
-  }, [isViewerMode, commitDataJson, viewerFieldValues, commitTemplate]);
+  }, [
+    isReadOnlyMode,
+    isViewerMode,
+    commitDataJson,
+    viewerFieldValues,
+    commitTemplate
+  ]);
 
   const handleReloadTemplateClick = useCallback(() => {
-    if (isViewerMode) {
+    if (isViewerMode || isReadOnlyMode) {
       return;
     }
     const parsed = parseTemplateJson(templateJsonText);
@@ -4076,7 +4152,7 @@ export default function PdfDesignerCore(
     setGuides([]);
     setSelectedFieldId(parsed.fields[0]?.id || null);
     lastLoadedJsonRef.current = templateJsonText;
-  }, [isViewerMode, templateJsonText]);
+  }, [isViewerMode, isReadOnlyMode, templateJsonText]);
 
   const handleExportTemplateClick = useCallback(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -4650,7 +4726,7 @@ export default function PdfDesignerCore(
     [viewerFieldValues, renderScale, setViewerFieldValue, viewerTemplateValues]
   );
 
-  if (!props.dataSource && !isViewerMode) {
+  if (!props.dataSource && !(isViewerMode || isReadOnlyMode)) {
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
         <div className="pdf-template-designer__alert">
@@ -4660,7 +4736,7 @@ export default function PdfDesignerCore(
     );
   }
 
-  if (isViewerMode) {
+  if (isViewerMode || isReadOnlyMode) {
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
         <div className="pdf-template-designer__canvas">
@@ -4715,13 +4791,26 @@ export default function PdfDesignerCore(
                 <option value={1.25}>125%</option>
                 <option value={1.5}>150%</option>
               </select>
-              <button
-                className="pdf-template-designer__button pdf-template-designer__button--primary"
-                onClick={handleSaveClick}
-                type="button"
-              >
-                {saveButtonText}
-              </button>
+              {!isReadOnlyMode ? (
+                <button
+                  className="pdf-template-designer__button pdf-template-designer__button--primary"
+                  onClick={handleSaveClick}
+                  type="button"
+                >
+                  {saveButtonText}
+                </button>
+              ) : null}
+              {customActionButtons.map((button) => (
+                <button
+                  key={button.key}
+                  className="pdf-template-designer__button"
+                  type="button"
+                  disabled={!button.enabled || !button.action?.canExecute}
+                  onClick={() => runConfiguredAction(button.action)}
+                >
+                  {button.text}
+                </button>
+              ))}
             </div>
           </div>
           {sigWebState === "loading" ? (
@@ -4732,18 +4821,18 @@ export default function PdfDesignerCore(
           {sigWebError ? (
             <div className="pdf-template-designer__alert">{sigWebError}</div>
           ) : null}
-          {showViewerDataJsonBindingWarning ? (
+          {isViewerMode && showViewerDataJsonBindingWarning ? (
             <div className="pdf-template-designer__alert">
               Viewer mode Data JSON is not bound. User edits and signatures will
               not persist.
             </div>
           ) : null}
-          {dataJsonError ? (
+          {isViewerMode && dataJsonError ? (
             <div className="pdf-template-designer__alert">
               Data JSON is invalid. {dataJsonError}
             </div>
           ) : null}
-          {viewerSignatureMessage ? (
+          {isViewerMode && viewerSignatureMessage ? (
             <div className="pdf-template-designer__alert">
               {viewerSignatureMessage}
             </div>
@@ -4782,82 +4871,84 @@ export default function PdfDesignerCore(
                     draggable={false}
                   />
                 ) : null}
-                <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
-                  {fieldsOnPage.map((field) => (
-                    <div
-                      key={field.id}
-                      className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
-                        field.type
-                      }${
-                        activeViewerSignatureFieldId === field.id
-                          ? " is-active"
-                          : ""
-                      }`}
-                      style={{
-                        left: field.x * renderScale,
-                        top: field.y * renderScale,
-                        width: field.w * renderScale,
-                        height: field.h * renderScale,
-                        backgroundColor: field.transparentBackground
-                          ? "transparent"
-                          : normalizeBackgroundColor(
-                              field.backgroundColor,
-                              DEFAULT_FIELD_BACKGROUND_COLOR
-                            ),
-                        color: normalizeHexColor(
-                          field.textColor,
-                          DEFAULT_FIELD_TEXT_COLOR
-                        )
-                      }}
-                      onPointerDown={() => {
-                        if (field.type === "signature") {
-                          setActiveViewerSignatureFieldId(field.id);
-                          setViewerSignatureMessage(null);
-                        } else if (activeViewerSignatureFieldId) {
-                          setActiveViewerSignatureFieldId(null);
-                        }
-                      }}
-                    >
-                      {renderViewerFieldControl(field)}
-                    </div>
-                  ))}
-                  {activeViewerSignatureField ? (
-                    <div
-                      className="pdf-template-designer__signature-actions"
-                      style={{
-                        left: activeViewerSignatureField.x * renderScale,
-                        top:
-                          (activeViewerSignatureField.y +
-                            activeViewerSignatureField.h) *
-                            renderScale +
-                          6
-                      }}
-                    >
-                      <button
-                        className="pdf-template-designer__button pdf-template-designer__button--compact"
-                        type="button"
-                        onClick={() =>
-                          clearViewerSignature(activeViewerSignatureField.key)
-                        }
+                {!isReadOnlyMode ? (
+                  <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
+                    {fieldsOnPage.map((field) => (
+                      <div
+                        key={field.id}
+                        className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
+                          field.type
+                        }${
+                          activeViewerSignatureFieldId === field.id
+                            ? " is-active"
+                            : ""
+                        }`}
+                        style={{
+                          left: field.x * renderScale,
+                          top: field.y * renderScale,
+                          width: field.w * renderScale,
+                          height: field.h * renderScale,
+                          backgroundColor: field.transparentBackground
+                            ? "transparent"
+                            : normalizeBackgroundColor(
+                                field.backgroundColor,
+                                DEFAULT_FIELD_BACKGROUND_COLOR
+                              ),
+                          color: normalizeHexColor(
+                            field.textColor,
+                            DEFAULT_FIELD_TEXT_COLOR
+                          )
+                        }}
+                        onPointerDown={() => {
+                          if (field.type === "signature") {
+                            setActiveViewerSignatureFieldId(field.id);
+                            setViewerSignatureMessage(null);
+                          } else if (activeViewerSignatureFieldId) {
+                            setActiveViewerSignatureFieldId(null);
+                          }
+                        }}
                       >
-                        Clear signature
-                      </button>
-                      {sigWebState === "ready" ? (
+                        {renderViewerFieldControl(field)}
+                      </div>
+                    ))}
+                    {activeViewerSignatureField ? (
+                      <div
+                        className="pdf-template-designer__signature-actions"
+                        style={{
+                          left: activeViewerSignatureField.x * renderScale,
+                          top:
+                            (activeViewerSignatureField.y +
+                              activeViewerSignatureField.h) *
+                              renderScale +
+                            6
+                        }}
+                      >
                         <button
                           className="pdf-template-designer__button pdf-template-designer__button--compact"
                           type="button"
                           onClick={() =>
-                            importSignatureFromSigWeb(
-                              activeViewerSignatureField.key
-                            )
+                            clearViewerSignature(activeViewerSignatureField.key)
                           }
                         >
-                          Use SigWeb
+                          Clear signature
                         </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
+                        {sigWebState === "ready" ? (
+                          <button
+                            className="pdf-template-designer__button pdf-template-designer__button--compact"
+                            type="button"
+                            onClick={() =>
+                              importSignatureFromSigWeb(
+                                activeViewerSignatureField.key
+                              )
+                            }
+                          >
+                            Use SigWeb
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -4990,6 +5081,17 @@ export default function PdfDesignerCore(
               >
                 {saveButtonText}
               </button>
+              {customActionButtons.map((button) => (
+                <button
+                  key={button.key}
+                  className="pdf-template-designer__button"
+                  type="button"
+                  disabled={!button.enabled || !button.action?.canExecute}
+                  onClick={() => runConfiguredAction(button.action)}
+                >
+                  {button.text}
+                </button>
+              ))}
             </div>
 
             <div className="pdf-template-designer__action-group">

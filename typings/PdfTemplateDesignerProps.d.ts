@@ -9,22 +9,22 @@ import { Big } from "big.js";
 
 export interface DataSourceType {
     templateJsonAttr: EditableValue<string>;
+    basePdfSource?: ListValue;
     dataJsonAttr?: EditableValue<string>;
     fieldKeySchemaJsonAttr?: EditableValue<string>;
-    basePdfSource?: ListValue;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
 }
 
-export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
+export type ViewModeEnum = "designer" | "viewer" | "readOnly";
 
-export type ViewModeEnum = "designer" | "viewer";
+export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
+    basePdfSource: {} | { caption: string } | { type: string } | null;
     dataJsonAttr: string;
     fieldKeySchemaJsonAttr: string;
-    basePdfSource: {} | { caption: string } | { type: string } | null;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
 }
@@ -35,12 +35,24 @@ export interface PdfTemplateDesignerContainerProps {
     style?: CSSProperties;
     tabIndex?: number;
     dataSource: DataSourceType[];
+    viewMode: ViewModeEnum;
+    pdfJsWorkerUrl?: DynamicValue<string>;
+    pdfJsScriptUrl?: DynamicValue<string>;
+    showCustomActionButton1: boolean;
+    customActionButton1Text: string;
+    customActionButton1Enabled: boolean;
+    customActionButton1Action?: ActionValue;
+    showCustomActionButton2: boolean;
+    customActionButton2Text: string;
+    customActionButton2Enabled: boolean;
+    customActionButton2Action?: ActionValue;
+    showCustomActionButton3: boolean;
+    customActionButton3Text: string;
+    customActionButton3Enabled: boolean;
+    customActionButton3Action?: ActionValue;
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    pdfJsWorkerUrl?: DynamicValue<string>;
-    pdfJsScriptUrl?: DynamicValue<string>;
-    sigWebScriptUrl?: DynamicValue<string>;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
     showFieldProperties: boolean;
@@ -77,8 +89,8 @@ export interface PdfTemplateDesignerContainerProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
+    sigWebScriptUrl?: DynamicValue<string>;
     saveButtonText: string;
-    viewMode: ViewModeEnum;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -93,12 +105,24 @@ export interface PdfTemplateDesignerPreviewProps {
     renderMode: "design" | "xray" | "structure";
     translate: (text: string) => string;
     dataSource: DataSourcePreviewType[];
+    viewMode: ViewModeEnum;
+    pdfJsWorkerUrl: string;
+    pdfJsScriptUrl: string;
+    showCustomActionButton1: boolean;
+    customActionButton1Text: string;
+    customActionButton1Enabled: boolean;
+    customActionButton1Action: {} | null;
+    showCustomActionButton2: boolean;
+    customActionButton2Text: string;
+    customActionButton2Enabled: boolean;
+    customActionButton2Action: {} | null;
+    showCustomActionButton3: boolean;
+    customActionButton3Text: string;
+    customActionButton3Enabled: boolean;
+    customActionButton3Action: {} | null;
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
-    pdfJsWorkerUrl: string;
-    pdfJsScriptUrl: string;
-    sigWebScriptUrl: string;
     showShortcutHints: boolean;
     enableKeyboardShortcuts: boolean;
     showFieldProperties: boolean;
@@ -135,6 +159,6 @@ export interface PdfTemplateDesignerPreviewProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
+    sigWebScriptUrl: string;
     saveButtonText: string;
-    viewMode: ViewModeEnum;
 }
