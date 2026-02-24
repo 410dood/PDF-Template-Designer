@@ -273,6 +273,66 @@
   color: #fff;
 }
 
+.pdf-template-designer__button--success {
+  background: #16a34a;
+  border-color: #15803d;
+  color: #fff;
+}
+
+.pdf-template-designer__button--info {
+  background: #0ea5e9;
+  border-color: #0284c7;
+  color: #fff;
+}
+
+.pdf-template-designer__button--warning {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: #fff;
+}
+
+.pdf-template-designer__button--danger {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+.pdf-template-designer__button--link {
+  border-color: transparent;
+  background: transparent;
+  color: #1d4ed8;
+  padding: 6px 2px;
+}
+
+.pdf-template-designer__button--link:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #1e40af;
+  text-decoration: underline;
+}
+
+.pdf-template-designer__toolbar-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-template-designer__toolbar-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 12px;
+}
+
+.pdf-template-designer__toolbar-button-icon-image {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
 .pdf-template-designer__palette-tool {
   position: relative;
   display: inline-flex;

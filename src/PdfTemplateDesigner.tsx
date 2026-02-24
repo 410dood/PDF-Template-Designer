@@ -17,6 +17,7 @@ import type {
   ActionValue,
   DynamicValue,
   EditableValue,
+  IconValue,
   ListAttributeValue,
   ListValue
 } from "mendix";
@@ -65,14 +66,53 @@ export interface PdfDesignerCoreProps {
   saveButtonText?: string;
   showCustomActionButton1?: boolean;
   customActionButton1Text?: string;
+  customActionButton1Tooltip?: string;
+  customActionButton1Icon?: IconValue;
+  customActionButton1RenderMode?: "button" | "link";
+  customActionButton1Style?:
+    | "default"
+    | "primary"
+    | "success"
+    | "info"
+    | "warning"
+    | "danger"
+    | "link";
+  customActionButton1TabIndex?: number;
+  customActionButton1Visible?: DynamicValue<boolean>;
   customActionButton1Enabled?: boolean;
   customActionButton1Action?: ActionValue;
   showCustomActionButton2?: boolean;
   customActionButton2Text?: string;
+  customActionButton2Tooltip?: string;
+  customActionButton2Icon?: IconValue;
+  customActionButton2RenderMode?: "button" | "link";
+  customActionButton2Style?:
+    | "default"
+    | "primary"
+    | "success"
+    | "info"
+    | "warning"
+    | "danger"
+    | "link";
+  customActionButton2TabIndex?: number;
+  customActionButton2Visible?: DynamicValue<boolean>;
   customActionButton2Enabled?: boolean;
   customActionButton2Action?: ActionValue;
   showCustomActionButton3?: boolean;
   customActionButton3Text?: string;
+  customActionButton3Tooltip?: string;
+  customActionButton3Icon?: IconValue;
+  customActionButton3RenderMode?: "button" | "link";
+  customActionButton3Style?:
+    | "default"
+    | "primary"
+    | "success"
+    | "info"
+    | "warning"
+    | "danger"
+    | "link";
+  customActionButton3TabIndex?: number;
+  customActionButton3Visible?: DynamicValue<boolean>;
   customActionButton3Enabled?: boolean;
   customActionButton3Action?: ActionValue;
   viewMode?: "designer" | "viewer" | "readOnly";
@@ -109,6 +149,15 @@ type FieldAlign = "left" | "center" | "right";
 type FieldOrientation = "horizontal" | "vertical";
 type FieldKeySourceMode = "manual" | "datasource" | "json";
 type ViewMode = "designer" | "viewer" | "readOnly";
+type ToolbarButtonRenderMode = "button" | "link";
+type ToolbarButtonStyle =
+  | "default"
+  | "primary"
+  | "success"
+  | "info"
+  | "warning"
+  | "danger"
+  | "link";
 
 interface KeyOption {
   value: string;
@@ -594,6 +643,87 @@ function normalizeViewMode(value: unknown): ViewMode {
     return "viewer";
   }
   return "designer";
+}
+
+function normalizeToolbarButtonRenderMode(
+  value: unknown
+): ToolbarButtonRenderMode {
+  return value === "link" ? "link" : "button";
+}
+
+function normalizeToolbarButtonStyle(value: unknown): ToolbarButtonStyle {
+  if (
+    value === "primary" ||
+    value === "success" ||
+    value === "info" ||
+    value === "warning" ||
+    value === "danger" ||
+    value === "link"
+  ) {
+    return value;
+  }
+  return "default";
+}
+
+function resolveBooleanProperty(
+  value: DynamicValue<boolean> | boolean | undefined,
+  fallback: boolean
+): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (!value) {
+    return fallback;
+  }
+  const dynamicValue = value as any;
+  if (dynamicValue.status === "available") {
+    return Boolean(dynamicValue.value);
+  }
+  return fallback;
+}
+
+function getToolbarButtonClassName(
+  renderMode: ToolbarButtonRenderMode,
+  style: ToolbarButtonStyle
+): string {
+  const classes = ["pdf-template-designer__button", "pdf-template-designer__toolbar-action"];
+  const resolvedStyle =
+    renderMode === "link" ? "link" : style === "default" ? "" : style;
+  if (resolvedStyle) {
+    classes.push(`pdf-template-designer__button--${resolvedStyle}`);
+  }
+  return classes.join(" ");
+}
+
+function renderToolbarButtonIcon(icon: IconValue | undefined): ReactElement | null {
+  if (!icon) {
+    return null;
+  }
+
+  if ((icon as any).type === "image" && typeof (icon as any).iconUrl === "string") {
+    return (
+      <img
+        className="pdf-template-designer__toolbar-button-icon-image"
+        src={(icon as any).iconUrl}
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (
+    (((icon as any).type === "glyph" || (icon as any).type === "icon") &&
+      typeof (icon as any).iconClass === "string")
+  ) {
+    return (
+      <span
+        className={`pdf-template-designer__toolbar-button-icon ${(icon as any).iconClass}`}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return null;
 }
 
 function normalizeStatus(
@@ -2344,22 +2474,58 @@ export default function PdfDesignerCore(
       [
         {
           key: "custom-action-1",
-          visible: props.showCustomActionButton1 === true,
+          visible:
+            props.showCustomActionButton1 === true &&
+            resolveBooleanProperty(props.customActionButton1Visible, true),
           text: (props.customActionButton1Text || "").trim() || "Action 1",
+          tooltip: (props.customActionButton1Tooltip || "").trim(),
+          icon: props.customActionButton1Icon,
+          className: getToolbarButtonClassName(
+            normalizeToolbarButtonRenderMode(props.customActionButton1RenderMode),
+            normalizeToolbarButtonStyle(props.customActionButton1Style)
+          ),
+          tabIndex:
+            typeof props.customActionButton1TabIndex === "number"
+              ? props.customActionButton1TabIndex
+              : undefined,
           enabled: props.customActionButton1Enabled !== false,
           action: props.customActionButton1Action
         },
         {
           key: "custom-action-2",
-          visible: props.showCustomActionButton2 === true,
+          visible:
+            props.showCustomActionButton2 === true &&
+            resolveBooleanProperty(props.customActionButton2Visible, true),
           text: (props.customActionButton2Text || "").trim() || "Action 2",
+          tooltip: (props.customActionButton2Tooltip || "").trim(),
+          icon: props.customActionButton2Icon,
+          className: getToolbarButtonClassName(
+            normalizeToolbarButtonRenderMode(props.customActionButton2RenderMode),
+            normalizeToolbarButtonStyle(props.customActionButton2Style)
+          ),
+          tabIndex:
+            typeof props.customActionButton2TabIndex === "number"
+              ? props.customActionButton2TabIndex
+              : undefined,
           enabled: props.customActionButton2Enabled !== false,
           action: props.customActionButton2Action
         },
         {
           key: "custom-action-3",
-          visible: props.showCustomActionButton3 === true,
+          visible:
+            props.showCustomActionButton3 === true &&
+            resolveBooleanProperty(props.customActionButton3Visible, true),
           text: (props.customActionButton3Text || "").trim() || "Action 3",
+          tooltip: (props.customActionButton3Tooltip || "").trim(),
+          icon: props.customActionButton3Icon,
+          className: getToolbarButtonClassName(
+            normalizeToolbarButtonRenderMode(props.customActionButton3RenderMode),
+            normalizeToolbarButtonStyle(props.customActionButton3Style)
+          ),
+          tabIndex:
+            typeof props.customActionButton3TabIndex === "number"
+              ? props.customActionButton3TabIndex
+              : undefined,
           enabled: props.customActionButton3Enabled !== false,
           action: props.customActionButton3Action
         }
@@ -2367,14 +2533,32 @@ export default function PdfDesignerCore(
     [
       props.showCustomActionButton1,
       props.customActionButton1Text,
+      props.customActionButton1Tooltip,
+      props.customActionButton1Icon,
+      props.customActionButton1RenderMode,
+      props.customActionButton1Style,
+      props.customActionButton1TabIndex,
+      props.customActionButton1Visible,
       props.customActionButton1Enabled,
       props.customActionButton1Action,
       props.showCustomActionButton2,
       props.customActionButton2Text,
+      props.customActionButton2Tooltip,
+      props.customActionButton2Icon,
+      props.customActionButton2RenderMode,
+      props.customActionButton2Style,
+      props.customActionButton2TabIndex,
+      props.customActionButton2Visible,
       props.customActionButton2Enabled,
       props.customActionButton2Action,
       props.showCustomActionButton3,
       props.customActionButton3Text,
+      props.customActionButton3Tooltip,
+      props.customActionButton3Icon,
+      props.customActionButton3RenderMode,
+      props.customActionButton3Style,
+      props.customActionButton3TabIndex,
+      props.customActionButton3Visible,
       props.customActionButton3Enabled,
       props.customActionButton3Action
     ]
@@ -4803,12 +4987,15 @@ export default function PdfDesignerCore(
               {customActionButtons.map((button) => (
                 <button
                   key={button.key}
-                  className="pdf-template-designer__button"
+                  className={button.className}
                   type="button"
+                  title={button.tooltip || undefined}
+                  tabIndex={button.tabIndex}
                   disabled={!button.enabled || !button.action?.canExecute}
                   onClick={() => runConfiguredAction(button.action)}
                 >
-                  {button.text}
+                  {renderToolbarButtonIcon(button.icon)}
+                  <span>{button.text}</span>
                 </button>
               ))}
             </div>
@@ -5084,12 +5271,15 @@ export default function PdfDesignerCore(
               {customActionButtons.map((button) => (
                 <button
                   key={button.key}
-                  className="pdf-template-designer__button"
+                  className={button.className}
                   type="button"
+                  title={button.tooltip || undefined}
+                  tabIndex={button.tabIndex}
                   disabled={!button.enabled || !button.action?.canExecute}
                   onClick={() => runConfiguredAction(button.action)}
                 >
-                  {button.text}
+                  {renderToolbarButtonIcon(button.icon)}
+                  <span>{button.text}</span>
                 </button>
               ))}
             </div>

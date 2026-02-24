@@ -4,7 +4,7 @@
  * @author Mendix Widgets Framework Team
  */
 import { CSSProperties } from "react";
-import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue } from "mendix";
+import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue, WebIcon } from "mendix";
 import { Big } from "big.js";
 
 export interface DataSourceType {
@@ -19,6 +19,18 @@ export interface DataSourceType {
 export type ViewModeEnum = "designer" | "viewer" | "readOnly";
 
 export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
+
+export type CustomActionButton1RenderModeEnum = "button" | "link";
+
+export type CustomActionButton1StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
+export type CustomActionButton2RenderModeEnum = "button" | "link";
+
+export type CustomActionButton2StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
+export type CustomActionButton3RenderModeEnum = "button" | "link";
+
+export type CustomActionButton3StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
 
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
@@ -48,14 +60,32 @@ export interface PdfTemplateDesignerContainerProps {
     saveButtonText: string;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
+    customActionButton1Tooltip: string;
+    customActionButton1Icon?: DynamicValue<WebIcon>;
+    customActionButton1RenderMode: CustomActionButton1RenderModeEnum;
+    customActionButton1Style: CustomActionButton1StyleEnum;
+    customActionButton1TabIndex: number;
+    customActionButton1Visible?: DynamicValue<boolean>;
     customActionButton1Enabled: boolean;
     customActionButton1Action?: ActionValue;
     showCustomActionButton2: boolean;
     customActionButton2Text: string;
+    customActionButton2Tooltip: string;
+    customActionButton2Icon?: DynamicValue<WebIcon>;
+    customActionButton2RenderMode: CustomActionButton2RenderModeEnum;
+    customActionButton2Style: CustomActionButton2StyleEnum;
+    customActionButton2TabIndex: number;
+    customActionButton2Visible?: DynamicValue<boolean>;
     customActionButton2Enabled: boolean;
     customActionButton2Action?: ActionValue;
     showCustomActionButton3: boolean;
     customActionButton3Text: string;
+    customActionButton3Tooltip: string;
+    customActionButton3Icon?: DynamicValue<WebIcon>;
+    customActionButton3RenderMode: CustomActionButton3RenderModeEnum;
+    customActionButton3Style: CustomActionButton3StyleEnum;
+    customActionButton3TabIndex: number;
+    customActionButton3Visible?: DynamicValue<boolean>;
     customActionButton3Enabled: boolean;
     customActionButton3Action?: ActionValue;
     showPaletteToolText: boolean;
@@ -118,14 +148,32 @@ export interface PdfTemplateDesignerPreviewProps {
     saveButtonText: string;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
+    customActionButton1Tooltip: string;
+    customActionButton1Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton1RenderMode: CustomActionButton1RenderModeEnum;
+    customActionButton1Style: CustomActionButton1StyleEnum;
+    customActionButton1TabIndex: number | null;
+    customActionButton1Visible: string;
     customActionButton1Enabled: boolean;
     customActionButton1Action: {} | null;
     showCustomActionButton2: boolean;
     customActionButton2Text: string;
+    customActionButton2Tooltip: string;
+    customActionButton2Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton2RenderMode: CustomActionButton2RenderModeEnum;
+    customActionButton2Style: CustomActionButton2StyleEnum;
+    customActionButton2TabIndex: number | null;
+    customActionButton2Visible: string;
     customActionButton2Enabled: boolean;
     customActionButton2Action: {} | null;
     showCustomActionButton3: boolean;
     customActionButton3Text: string;
+    customActionButton3Tooltip: string;
+    customActionButton3Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton3RenderMode: CustomActionButton3RenderModeEnum;
+    customActionButton3Style: CustomActionButton3StyleEnum;
+    customActionButton3TabIndex: number | null;
+    customActionButton3Visible: string;
     customActionButton3Enabled: boolean;
     customActionButton3Action: {} | null;
     showPaletteToolText: boolean;

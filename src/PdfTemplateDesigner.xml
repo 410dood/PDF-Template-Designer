@@ -130,8 +130,46 @@
                 <description>Show or hide additional action button 1 in the toolbar.</description>
             </property>
             <property key="customActionButton1Text" type="string" required="false">
-                <caption>Custom button 1 text</caption>
-                <description>Label for custom action button 1. Leave empty to use 'Action 1'.</description>
+                <caption>Custom button 1 caption</caption>
+                <description>Caption for custom action button 1. Leave empty to use 'Action 1'.</description>
+            </property>
+            <property key="customActionButton1Tooltip" type="string" required="false">
+                <caption>Custom button 1 tooltip</caption>
+                <description>Optional tooltip text for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1Icon" type="icon" required="false">
+                <caption>Custom button 1 icon</caption>
+                <description>Optional icon for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 1 render mode</caption>
+                <description>Render custom action button 1 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton1Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 1 style</caption>
+                <description>Visual style for custom action button 1.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton1TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 1 tab index</caption>
+                <description>Optional tab index for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1Visible" type="expression" required="false">
+                <caption>Custom button 1 visible</caption>
+                <description>Visibility expression for custom action button 1.</description>
+                <returnType type="Boolean" />
             </property>
             <property key="customActionButton1Enabled" type="boolean" defaultValue="true" required="true">
                 <caption>Custom button 1 enabled</caption>
@@ -147,8 +185,46 @@
                 <description>Show or hide additional action button 2 in the toolbar.</description>
             </property>
             <property key="customActionButton2Text" type="string" required="false">
-                <caption>Custom button 2 text</caption>
-                <description>Label for custom action button 2. Leave empty to use 'Action 2'.</description>
+                <caption>Custom button 2 caption</caption>
+                <description>Caption for custom action button 2. Leave empty to use 'Action 2'.</description>
+            </property>
+            <property key="customActionButton2Tooltip" type="string" required="false">
+                <caption>Custom button 2 tooltip</caption>
+                <description>Optional tooltip text for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2Icon" type="icon" required="false">
+                <caption>Custom button 2 icon</caption>
+                <description>Optional icon for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 2 render mode</caption>
+                <description>Render custom action button 2 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton2Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 2 style</caption>
+                <description>Visual style for custom action button 2.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton2TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 2 tab index</caption>
+                <description>Optional tab index for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2Visible" type="expression" required="false">
+                <caption>Custom button 2 visible</caption>
+                <description>Visibility expression for custom action button 2.</description>
+                <returnType type="Boolean" />
             </property>
             <property key="customActionButton2Enabled" type="boolean" defaultValue="true" required="true">
                 <caption>Custom button 2 enabled</caption>
@@ -164,8 +240,46 @@
                 <description>Show or hide additional action button 3 in the toolbar.</description>
             </property>
             <property key="customActionButton3Text" type="string" required="false">
-                <caption>Custom button 3 text</caption>
-                <description>Label for custom action button 3. Leave empty to use 'Action 3'.</description>
+                <caption>Custom button 3 caption</caption>
+                <description>Caption for custom action button 3. Leave empty to use 'Action 3'.</description>
+            </property>
+            <property key="customActionButton3Tooltip" type="string" required="false">
+                <caption>Custom button 3 tooltip</caption>
+                <description>Optional tooltip text for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3Icon" type="icon" required="false">
+                <caption>Custom button 3 icon</caption>
+                <description>Optional icon for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 3 render mode</caption>
+                <description>Render custom action button 3 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton3Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 3 style</caption>
+                <description>Visual style for custom action button 3.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton3TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 3 tab index</caption>
+                <description>Optional tab index for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3Visible" type="expression" required="false">
+                <caption>Custom button 3 visible</caption>
+                <description>Visibility expression for custom action button 3.</description>
+                <returnType type="Boolean" />
             </property>
             <property key="customActionButton3Enabled" type="boolean" defaultValue="true" required="true">
                 <caption>Custom button 3 enabled</caption>
