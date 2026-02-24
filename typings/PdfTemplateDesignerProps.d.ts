@@ -10,6 +10,7 @@ import { Big } from "big.js";
 export interface DataSourceType {
     templateJsonAttr: EditableValue<string>;
     dataJsonAttr?: EditableValue<string>;
+    fieldKeySchemaJsonAttr?: EditableValue<string>;
     basePdfSource?: ListValue;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
@@ -19,11 +20,10 @@ export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
 export type ViewModeEnum = "designer" | "viewer";
 
-export type OutputPdfModeEnum = "flattened" | "acroform";
-
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
     dataJsonAttr: string;
+    fieldKeySchemaJsonAttr: string;
     basePdfSource: {} | { caption: string } | { type: string } | null;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
@@ -38,7 +38,6 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
     sigWebScriptUrl?: DynamicValue<string>;
@@ -48,6 +47,24 @@ export interface PdfTemplateDesignerContainerProps {
     showPaletteSection: boolean;
     showFieldsSection: boolean;
     showPagesSection: boolean;
+    showPaletteToolText: boolean;
+    showPaletteToolMultiVariableText: boolean;
+    showPaletteToolSignature: boolean;
+    showPaletteToolTable: boolean;
+    showPaletteToolLine: boolean;
+    showPaletteToolBox: boolean;
+    showPaletteToolCircle: boolean;
+    showPaletteToolImage: boolean;
+    showPaletteToolLink: boolean;
+    showPaletteToolSignaturePad: boolean;
+    showPaletteToolQr: boolean;
+    showPaletteToolDate: boolean;
+    showPaletteToolTime: boolean;
+    showPaletteToolSelect: boolean;
+    showPaletteToolCheckbox: boolean;
+    showPaletteToolRadio: boolean;
+    showPaletteToolBarcode: boolean;
+    showPaletteToolBarcodeWide: boolean;
     showPropertyKey: boolean;
     showPropertyLabel: boolean;
     showPropertyShowLabel: boolean;
@@ -62,7 +79,6 @@ export interface PdfTemplateDesignerContainerProps {
     showPropertyDeleteAction: boolean;
     saveButtonText: string;
     viewMode: ViewModeEnum;
-    outputPdfMode: OutputPdfModeEnum;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -80,7 +96,6 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
-    fieldKeyOptionsJson: string;
     pdfJsWorkerUrl: string;
     pdfJsScriptUrl: string;
     sigWebScriptUrl: string;
@@ -90,6 +105,24 @@ export interface PdfTemplateDesignerPreviewProps {
     showPaletteSection: boolean;
     showFieldsSection: boolean;
     showPagesSection: boolean;
+    showPaletteToolText: boolean;
+    showPaletteToolMultiVariableText: boolean;
+    showPaletteToolSignature: boolean;
+    showPaletteToolTable: boolean;
+    showPaletteToolLine: boolean;
+    showPaletteToolBox: boolean;
+    showPaletteToolCircle: boolean;
+    showPaletteToolImage: boolean;
+    showPaletteToolLink: boolean;
+    showPaletteToolSignaturePad: boolean;
+    showPaletteToolQr: boolean;
+    showPaletteToolDate: boolean;
+    showPaletteToolTime: boolean;
+    showPaletteToolSelect: boolean;
+    showPaletteToolCheckbox: boolean;
+    showPaletteToolRadio: boolean;
+    showPaletteToolBarcode: boolean;
+    showPaletteToolBarcodeWide: boolean;
     showPropertyKey: boolean;
     showPropertyLabel: boolean;
     showPropertyShowLabel: boolean;
@@ -104,5 +137,4 @@ export interface PdfTemplateDesignerPreviewProps {
     showPropertyDeleteAction: boolean;
     saveButtonText: string;
     viewMode: ViewModeEnum;
-    outputPdfMode: OutputPdfModeEnum;
 }

@@ -44,7 +44,7 @@
      - `Data JSON` bound to `ClientDocument.DataJson`
      - `Base PDF datasource` bound to the base template file
    - User edits/signs in overlay controls; widget auto-syncs to `ClientDocument.DataJson`.
-   - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF/AcroForm field values.
+   - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF form field values.
    - Set `Status = InReview` while editing.
 3. `ACT_ClientDocument_FinalizeFromDataJson`
    - Input: `ClientDocument`.
@@ -58,7 +58,7 @@
 - Treat `FormConfiguration` as design-time only; treat `ClientDocument` as runtime instance only.
 - Regenerate final PDFs from pristine base PDF + template snapshot + current `DataJson`.
 - Do not regenerate from an already finalized PDF as a base.
-- For this architecture, native AcroForm editing/finalization is legacy/optional; preferred path is overlay + `DataJson`.
+- Preferred path is overlay + `DataJson`.
 
 **Template JSON (definition)**
 The designer widget produces a **template definition JSON** that describes field positions on the PDF.
@@ -69,7 +69,11 @@ The designer widget produces a **template definition JSON** that describes field
     {
       "key": "clientName",
       "label": "Client name",
+      "variablesSampleData": "{ClientFirstName} {ClientLastName}",
       "showLabel": true,
+      "transparentBackground": false,
+      "textColor": "#111827",
+      "backgroundColor": "#ffffff",
       "type": "text",
       "page": 0,
       "x": 100,
@@ -85,49 +89,74 @@ The designer widget produces a **template definition JSON** that describes field
   "meta": {
     "units": "pt",
     "createdWith": "pdftemplatedesigner",
-    "outputMode": "flattened|acroform"
+    "outputMode": "flattened"
   }
 }
 ```
 **Field mapping notes**
 - `page` is **0-based** (page 0 = first page).
 - `x`, `y`, `w`, `h` are **PDF points** (1/72 inch), **top-left origin**.
-- `type` values: `text`, `checkbox`, `date`, `signature`.
+- `type` values: `text`, `checkbox`, `date`, `signature`, `multiVariableText`, `select`, `radio`, `image`.
 - `align` values: `left`, `center`, `right`.
 - Optional `format` (for `date` type): Java date format pattern used in generation, default `MM/dd/yyyy`.
-- Optional `showLabel` (Boolean, default `true`): when `outputMode = flattened`, renders label text in the output.
+- Optional `showLabel` (Boolean, default `true`): renders label text in flattened output.
+- Optional `transparentBackground` (Boolean, default `false`): when `true`, field content area is not white-filled before rendering.
+- Optional `textColor` / `backgroundColor` (Hex colors): field text/background styling used by Viewer mode.
+- Optional `labelOrientation` (`horizontal`|`vertical`, default `horizontal`): controls label placement in flattened output.
+- Optional `optionsOrientation` (`horizontal`|`vertical`, default `vertical` for `radio`): controls radio option layout in Viewer.
+- Optional `options` (String array): option list for `select`/`radio`.
+- Optional `imageDataUrl` (String): static base64 image used by `image` fields when no key-bound image value is available.
+  - Designer-uploaded static images are normalized to PNG data URLs to improve flatten compatibility.
+  - Flatten renderer also accepts legacy aliases (`imageData`, `dataUrl`, `src`) from older template JSON.
+- Optional `variablesSampleData` (String): for `multiVariableText`, supports `{key}` token replacement from `DataJson` (including computed keys like `{__currentDate}`).
 
 **Template JSON output mode**
 For the recommended `pdfme`-style runtime workflow, always generate flattened output from `TemplateJson + DataJson`.
-`meta.outputMode` is legacy and should not drive runtime behavior in end-user fill/sign flows.
 
-**Fixed key options JSON (widget config)**
-If you set widget property `Field key source = Dropdown from JSON`, you can paste this in `Field key options JSON`:
+**Fixed key schema JSON (widget config, JSON Schema)**
+If you set widget property `Field key source = Dropdown from JSON`, bind `Field key schema JSON` to a String attribute and store this JSON in that attribute:
 ```json
-[
-  { "key": "EnrollmentURecordId", "label": "Enrollment Record ID", "type": "String" },
-  { "key": "EnrollmentStartDate", "label": "Enrollment Start Date", "type": "DateTime" },
-  { "key": "EnrollmentEndDate", "label": "Enrollment End Date", "type": "DateTime" },
-  { "key": "EnrollmentStatus", "label": "Enrollment Status", "type": "Enumeration" },
-  { "key": "ClientFullName", "label": "Client Full Name", "type": "String" },
-  { "key": "ClientDateOfBirth", "label": "Client Date Of Birth", "type": "DateTime" },
-  { "key": "ProgramName", "label": "Program Name", "type": "String" },
-  { "key": "ProgramCode", "label": "Program Code", "type": "String" },
-  { "key": "EndEnrollmentReasonName", "label": "End Enrollment Reason", "type": "String" },
-  { "key": "CountyName", "label": "County Name", "type": "String" }
-]
+{
+  "type": "object",
+  "properties": {
+    "EnrollmentURecordId": { "type": "integer", "title": "Enrollment Record ID" },
+    "EnrollmentStartDate": { "type": "string", "format": "date-time", "title": "Enrollment Start Date" },
+    "EnrollmentEndDate": { "type": "string", "format": "date-time", "title": "Enrollment End Date" },
+    "EnrollmentStatus": { "type": "string", "title": "Enrollment Status", "enum": ["Active", "Inactive", "Pre-Screen"] },
+    "ClientFullName": { "type": "string", "title": "Client Full Name" },
+    "ClientDateOfBirth": { "type": "string", "format": "date-time", "title": "Client Date Of Birth" },
+    "ProgramName": { "type": "string", "title": "Program Name" },
+    "ProgramCode": { "type": "string", "title": "Program Code" },
+    "EndEnrollmentReasonName": { "type": "string", "title": "End Enrollment Reason" },
+    "CountyName": { "type": "string", "title": "County Name" }
+  }
+}
 ```
-The optional `type` value is displayed in the key palette/dropdown and auto-maps widget field types for:
+The schema property name is used as key, `title` as label, and field types are auto-mapped for:
 - `Boolean` -> `checkbox`
-- `Date`/`DateTime`/`Time` -> `date`
+- `Enumeration` -> `select`
+- `Date` -> `date`
+- `DateTime`/`Time` -> `date`
+- `Image`/`Photo`/`Picture` -> `image`
 - `Signature` -> `signature`
 
-In dropdown key-source modes (`datasource`/`json`), the designer palette lists keys instead of field types so users can drag keys directly onto the document in one step.
-Built-in key options are also included in those dropdown modes:
+For mapped `date` fields, a default format is also applied:
+- `Date` -> `MM/dd/yyyy`
+- `Time` -> `HH:mm`
+- `DateTime` -> `MM/dd/yyyy HH:mm`
+
+Built-in key options are included in dropdown key-source modes (`datasource`/`json`):
 - `__currentDate` (`__today` alias)
 - `__currentTime` (`__nowTime` alias)
 - `__currentDateTime` (`__now` alias)
 - `__signature` (signature placeholder)
+
+**Widget property highlights**
+- Category `Palette fields` provides per-tool show/hide booleans so app developers can disable specific palette tools (for example hide `Barcode` or `QR code`).
+- Field property `labelOrientation` controls label placement (`horizontal` inline or `vertical` stacked).
+- For `radio`, `optionsOrientation` controls whether options render vertically or horizontally in Viewer mode.
+- For `date` fields, the editor includes a `Format` dropdown with common values (`MM/dd/yyyy`, `HH:mm`, `MM/dd/yyyy HH:mm`, `MM/dd/yyyy hh:mm a`).
+- If a `date` field uses computed keys (`__currentDate`, `__currentTime`, `__currentDateTime`), Viewer mode renders the resolved value as static text to avoid browser date-input parsing/clipping artifacts.
 
 **Data JSON (values)**
 The Java action expects a **data JSON** object where keys match template field `key` values.
@@ -141,10 +170,13 @@ The Java action expects a **data JSON** object where keys match template field `
 ```
 **Data mapping notes**
 - Values are simple scalars (string/number/boolean). Strings are rendered for `text`, `date`, `signature`.
+- `select`/`radio` values should be the selected option string.
 - `checkbox` accepts boolean-like values such as `true/false`, `1/0`, `yes/no`, `on/off`, `checked/unchecked`, `y/n`, and numeric values.
 - `date` supports ISO strings like `2022-11-07T05:00:00.000Z` and can be formatted with field `format` (for example `MM/dd/yyyy`).
 - If a key is missing, the field is left blank.
 - Flattened `signature` fields render image data from `DataJson` when the value is a base64 image string (for example `data:image/png;base64,...`).
+- Flattened `image` fields render a key-bound base64 image from `DataJson` when present; otherwise they fall back to template `imageDataUrl`.
+  - Image decode is tolerant of common payload wrappers (for example `value`, `dataUrl`, `imageData`, `base64`, `src`, `content`).
 - Reserved computed keys (when not present in `dataJson`):
   - `__currentDate` (alias `__today`) -> current server date.
   - `__currentTime` (alias `__nowTime`) -> current server time.
@@ -185,7 +217,6 @@ The Java action expects a **data JSON** object where keys match template field `
 
 **Java action**
 - See `mendix-module/Document/javasource/document/actions/GenerateFlattenedPdf.java`.
-- See `mendix-module/Document/javasource/document/actions/FinalizePdfToFlattened.java`.
 - Recommended action signature:
   - Input: `basePdf` (`System.FileDocument`)
   - Input: `templateJson` (`String`)
@@ -196,10 +227,8 @@ The Java action expects a **data JSON** object where keys match template field `
   - a normal PDF, or
   - a scanned image file (`png`/`jpg`/`jpeg`) which is converted to a single-page PDF before rendering fields.
 - Preferred architecture: overlay Viewer + `ClientDocument.DataJson` source of truth + flattened final output.
-- Runtime generator should always flatten existing AcroForm content first (if any), then render template overlays from `DataJson`.
+- Runtime generator should always flatten existing native PDF form content first (if any), then render template overlays from `DataJson`.
 - For final non-editable output after user edits/signs in Viewer overlay, use the stored `ClientDocument.DataJson` in your microflow and call `GenerateFlattenedPdf`, then archive the result.
-- `FinalizePdfToFlattened` only flattens values already present inside the PDF file itself.
-- `FinalizePdfToFlattened` is mainly for native AcroForm workflows; it is not required for the overlay + `DataJson` architecture.
 - Flattening now refreshes non-signature appearances and clears stale widget/default appearances first, which avoids light placeholder/ghost text in finalized output.
 - Flatten/render paths also clear field content areas before writing values, so rerunning generation on already-edited documents does not stack old light placeholder text under new values.
 - Use Mendix **Managed Dependencies** (recommended), not manual `userlib` copy.
