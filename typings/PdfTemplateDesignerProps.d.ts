@@ -36,8 +36,16 @@ export interface PdfTemplateDesignerContainerProps {
     tabIndex?: number;
     dataSource: DataSourceType[];
     viewMode: ViewModeEnum;
-    pdfJsWorkerUrl?: DynamicValue<string>;
-    pdfJsScriptUrl?: DynamicValue<string>;
+    showPagesSection: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showFieldProperties: boolean;
+    showShortcutHints: boolean;
+    enableKeyboardShortcuts: boolean;
+    fieldKeySourceMode: FieldKeySourceModeEnum;
+    fieldKeyOptionsSource?: ListValue;
+    fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
+    saveButtonText: string;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Enabled: boolean;
@@ -50,15 +58,6 @@ export interface PdfTemplateDesignerContainerProps {
     customActionButton3Text: string;
     customActionButton3Enabled: boolean;
     customActionButton3Action?: ActionValue;
-    fieldKeySourceMode: FieldKeySourceModeEnum;
-    fieldKeyOptionsSource?: ListValue;
-    fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    showShortcutHints: boolean;
-    enableKeyboardShortcuts: boolean;
-    showFieldProperties: boolean;
-    showPaletteSection: boolean;
-    showFieldsSection: boolean;
-    showPagesSection: boolean;
     showPaletteToolText: boolean;
     showPaletteToolMultiVariableText: boolean;
     showPaletteToolSignature: boolean;
@@ -89,8 +88,9 @@ export interface PdfTemplateDesignerContainerProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
+    pdfJsWorkerUrl?: DynamicValue<string>;
+    pdfJsScriptUrl?: DynamicValue<string>;
     sigWebScriptUrl?: DynamicValue<string>;
-    saveButtonText: string;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -106,8 +106,16 @@ export interface PdfTemplateDesignerPreviewProps {
     translate: (text: string) => string;
     dataSource: DataSourcePreviewType[];
     viewMode: ViewModeEnum;
-    pdfJsWorkerUrl: string;
-    pdfJsScriptUrl: string;
+    showPagesSection: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showFieldProperties: boolean;
+    showShortcutHints: boolean;
+    enableKeyboardShortcuts: boolean;
+    fieldKeySourceMode: FieldKeySourceModeEnum;
+    fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
+    fieldKeyOptionAttribute: string;
+    saveButtonText: string;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Enabled: boolean;
@@ -120,15 +128,6 @@ export interface PdfTemplateDesignerPreviewProps {
     customActionButton3Text: string;
     customActionButton3Enabled: boolean;
     customActionButton3Action: {} | null;
-    fieldKeySourceMode: FieldKeySourceModeEnum;
-    fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
-    fieldKeyOptionAttribute: string;
-    showShortcutHints: boolean;
-    enableKeyboardShortcuts: boolean;
-    showFieldProperties: boolean;
-    showPaletteSection: boolean;
-    showFieldsSection: boolean;
-    showPagesSection: boolean;
     showPaletteToolText: boolean;
     showPaletteToolMultiVariableText: boolean;
     showPaletteToolSignature: boolean;
@@ -159,6 +158,7 @@ export interface PdfTemplateDesignerPreviewProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
+    pdfJsWorkerUrl: string;
+    pdfJsScriptUrl: string;
     sigWebScriptUrl: string;
-    saveButtonText: string;
 }
