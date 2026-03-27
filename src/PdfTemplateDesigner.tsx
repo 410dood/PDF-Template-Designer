@@ -64,6 +64,7 @@ export interface PdfDesignerCoreProps {
   showPropertyDuplicateAction?: boolean;
   showPropertyDeleteAction?: boolean;
   saveButtonText?: string;
+  showPrintButton?: boolean;
   showCustomActionButton1?: boolean;
   customActionButton1Text?: string;
   customActionButton1Tooltip?: string;
@@ -2466,6 +2467,7 @@ export default function PdfDesignerCore(
     props.showPropertyDuplicateAction !== false;
   const showPropertyDeleteAction = props.showPropertyDeleteAction !== false;
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
+  const showPrintButton = props.showPrintButton === true;
   const viewMode = normalizeViewMode((props as any).viewMode);
   const isViewerMode = viewMode === "viewer";
   const isReadOnlyMode = viewMode === "readOnly";
@@ -4357,6 +4359,52 @@ export default function PdfDesignerCore(
     URL.revokeObjectURL(url);
   }, [basePdfId]);
 
+  const handlePrintClick = useCallback(async () => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+    const doc = pdfDoc;
+    if (!doc) {
+      return;
+    }
+    const totalPages = doc.numPages;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      return;
+    }
+    printWindow.document.write(
+      "<!DOCTYPE html><html><head><title>Print</title><style>" +
+        "html,body{margin:0;padding:0}" +
+        "canvas{display:block;page-break-after:always;margin:0 auto}" +
+        "canvas:last-child{page-break-after:avoid}" +
+        "@media print{@page{margin:0}body{margin:0}}" +
+        "</style></head><body></body></html>"
+    );
+    printWindow.document.close();
+    try {
+      for (let i = 1; i <= totalPages; i++) {
+        const page = await doc.getPage(i);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = printWindow.document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / 2}px`;
+        canvas.style.height = `${viewport.height / 2}px`;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          continue;
+        }
+        printWindow.document.body.appendChild(canvas);
+        await page.render({ canvasContext: context, viewport }).promise;
+      }
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    } catch (_error) {
+      printWindow.close();
+    }
+  }, [pdfDoc]);
+
   const reorderFieldListItem = useCallback(
     (sourceId: string, targetId: string) => {
       if (!sourceId || !targetId || sourceId === targetId) {
@@ -4975,6 +5023,17 @@ export default function PdfDesignerCore(
                 <option value={1.25}>125%</option>
                 <option value={1.5}>150%</option>
               </select>
+              {showPrintButton ? (
+                <button
+                  className="pdf-template-designer__button"
+                  onClick={handlePrintClick}
+                  type="button"
+                  title="Print all pages"
+                  disabled={!pdfDoc}
+                >
+                  Print
+                </button>
+              ) : null}
               {!isReadOnlyMode ? (
                 <button
                   className="pdf-template-designer__button pdf-template-designer__button--primary"
@@ -5261,6 +5320,17 @@ export default function PdfDesignerCore(
               >
                 Export
               </button>
+              {showPrintButton ? (
+                <button
+                  className="pdf-template-designer__button"
+                  onClick={handlePrintClick}
+                  type="button"
+                  title="Print all pages"
+                  disabled={!pdfDoc}
+                >
+                  Print
+                </button>
+              ) : null}
               <button
                 className="pdf-template-designer__button pdf-template-designer__button--primary"
                 onClick={handleSaveClick}

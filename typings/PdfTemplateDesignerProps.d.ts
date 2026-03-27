@@ -58,6 +58,7 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
     saveButtonText: string;
+    showPrintButton: boolean;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Tooltip: string;
@@ -146,6 +147,7 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
     saveButtonText: string;
+    showPrintButton: boolean;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Tooltip: string;

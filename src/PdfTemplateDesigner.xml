@@ -125,6 +125,11 @@
                 <description>Custom text for the Save button in the toolbar. Leave empty to use 'Save JSON'.</description>
             </property>
 
+            <property key="showPrintButton" type="boolean" defaultValue="false" required="true">
+                <caption>Show print button</caption>
+                <description>Show a Print button in the toolbar that prints all PDF pages.</description>
+            </property>
+
             <property key="showCustomActionButton1" type="boolean" defaultValue="false" required="true">
                 <caption>Show custom button 1</caption>
                 <description>Show or hide additional action button 1 in the toolbar.</description>

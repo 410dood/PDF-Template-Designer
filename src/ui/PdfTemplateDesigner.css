@@ -668,6 +668,9 @@
 
 .pdf-template-designer__viewer-checkbox input {
   margin: 0;
+  min-width: 14px;
+  min-height: 14px;
+  flex-shrink: 0;
 }
 
 .pdf-template-designer__viewer-multi {
