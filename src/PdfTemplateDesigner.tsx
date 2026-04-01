@@ -687,7 +687,10 @@ function getToolbarButtonClassName(
   renderMode: ToolbarButtonRenderMode,
   style: ToolbarButtonStyle
 ): string {
-  const classes = ["pdf-template-designer__button", "pdf-template-designer__toolbar-action"];
+  const classes = [
+    "pdf-template-designer__button",
+    "pdf-template-designer__toolbar-action"
+  ];
   const resolvedStyle =
     renderMode === "link" ? "link" : style === "default" ? "" : style;
   if (resolvedStyle) {
@@ -696,12 +699,17 @@ function getToolbarButtonClassName(
   return classes.join(" ");
 }
 
-function renderToolbarButtonIcon(icon: IconValue | undefined): ReactElement | null {
+function renderToolbarButtonIcon(
+  icon: IconValue | undefined
+): ReactElement | null {
   if (!icon) {
     return null;
   }
 
-  if ((icon as any).type === "image" && typeof (icon as any).iconUrl === "string") {
+  if (
+    (icon as any).type === "image" &&
+    typeof (icon as any).iconUrl === "string"
+  ) {
     return (
       <img
         className="pdf-template-designer__toolbar-button-icon-image"
@@ -713,12 +721,14 @@ function renderToolbarButtonIcon(icon: IconValue | undefined): ReactElement | nu
   }
 
   if (
-    (((icon as any).type === "glyph" || (icon as any).type === "icon") &&
-      typeof (icon as any).iconClass === "string")
+    ((icon as any).type === "glyph" || (icon as any).type === "icon") &&
+    typeof (icon as any).iconClass === "string"
   ) {
     return (
       <span
-        className={`pdf-template-designer__toolbar-button-icon ${(icon as any).iconClass}`}
+        className={`pdf-template-designer__toolbar-button-icon ${
+          (icon as any).iconClass
+        }`}
         aria-hidden="true"
       />
     );
@@ -2228,6 +2238,50 @@ function initialViewerFieldValue(
   return "";
 }
 
+function getTemplateFieldDisplayName(field: TemplateField): string {
+  return field.label.trim() || field.key.trim() || "Unnamed field";
+}
+
+function isViewerRequiredFieldMissing(
+  field: TemplateField,
+  viewerFieldValues: Record<string, ViewerFieldValue>,
+  viewerTemplateValues: Record<string, unknown>
+): boolean {
+  if (!field.required) {
+    return false;
+  }
+
+  if (field.type === "checkbox") {
+    return !Boolean(viewerFieldValues[field.key]);
+  }
+
+  if (field.type === "multiVariableText") {
+    return !resolveMultiVariableText(
+      field.variablesSampleData || "",
+      viewerTemplateValues
+    ).trim();
+  }
+
+  if (field.type === "image") {
+    return (
+      !normalizeImageDataFromUnknown(viewerFieldValues[field.key]) &&
+      !normalizeImageDataFromUnknown(field.imageDataUrl)
+    );
+  }
+
+  const rawValue = viewerFieldValues[field.key];
+  const displayValue =
+    typeof rawValue === "string" ? rawValue.trim() : String(rawValue || "");
+  const computedFallback = isComputedTokenKey(field.key)
+    ? resolveComputedTokenValue(
+        field.key,
+        field.type === "date" ? field.format : undefined
+      ) || ""
+    : "";
+
+  return !displayValue && !computedFallback.trim();
+}
+
 function InlineSignatureCanvas(
   props: InlineSignatureCanvasProps
 ): ReactElement {
@@ -2483,7 +2537,9 @@ export default function PdfDesignerCore(
           tooltip: (props.customActionButton1Tooltip || "").trim(),
           icon: props.customActionButton1Icon,
           className: getToolbarButtonClassName(
-            normalizeToolbarButtonRenderMode(props.customActionButton1RenderMode),
+            normalizeToolbarButtonRenderMode(
+              props.customActionButton1RenderMode
+            ),
             normalizeToolbarButtonStyle(props.customActionButton1Style)
           ),
           tabIndex:
@@ -2502,7 +2558,9 @@ export default function PdfDesignerCore(
           tooltip: (props.customActionButton2Tooltip || "").trim(),
           icon: props.customActionButton2Icon,
           className: getToolbarButtonClassName(
-            normalizeToolbarButtonRenderMode(props.customActionButton2RenderMode),
+            normalizeToolbarButtonRenderMode(
+              props.customActionButton2RenderMode
+            ),
             normalizeToolbarButtonStyle(props.customActionButton2Style)
           ),
           tabIndex:
@@ -2521,7 +2579,9 @@ export default function PdfDesignerCore(
           tooltip: (props.customActionButton3Tooltip || "").trim(),
           icon: props.customActionButton3Icon,
           className: getToolbarButtonClassName(
-            normalizeToolbarButtonRenderMode(props.customActionButton3RenderMode),
+            normalizeToolbarButtonRenderMode(
+              props.customActionButton3RenderMode
+            ),
             normalizeToolbarButtonStyle(props.customActionButton3Style)
           ),
           tabIndex:
@@ -2639,6 +2699,7 @@ export default function PdfDesignerCore(
   const [viewerSignatureMessage, setViewerSignatureMessage] = useState<
     string | null
   >(null);
+  const [viewerSaveAttempted, setViewerSaveAttempted] = useState(false);
   const [sigWebState, setSigWebState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
@@ -2678,6 +2739,12 @@ export default function PdfDesignerCore(
   useEffect(() => {
     fieldsRef.current = fields;
   }, [fields]);
+
+  useEffect(() => {
+    if (!isViewerMode) {
+      setViewerSaveAttempted(false);
+    }
+  }, [isViewerMode]);
 
   useEffect(() => {
     selectedFieldIdRef.current = selectedFieldId;
@@ -3438,6 +3505,28 @@ export default function PdfDesignerCore(
       ),
     [fields, viewerFieldValues]
   );
+  const missingViewerRequiredFields = useMemo(
+    () =>
+      fields.filter((field) =>
+        isViewerRequiredFieldMissing(
+          field,
+          viewerFieldValues,
+          viewerTemplateValues
+        )
+      ),
+    [fields, viewerFieldValues, viewerTemplateValues]
+  );
+  const missingViewerRequiredFieldIds = useMemo(
+    () => new Set(missingViewerRequiredFields.map((field) => field.id)),
+    [missingViewerRequiredFields]
+  );
+  const hasMissingViewerRequiredFields = missingViewerRequiredFields.length > 0;
+  const viewerValidationMessage =
+    isViewerMode && viewerSaveAttempted && hasMissingViewerRequiredFields
+      ? `Fill the required fields before saving: ${missingViewerRequiredFields
+          .map(getTemplateFieldDisplayName)
+          .join(", ")}.`
+      : null;
 
   const pushUndoSnapshot = useCallback((snapshot?: TemplateField[]) => {
     const source = snapshot || fieldsRef.current;
@@ -4303,6 +4392,11 @@ export default function PdfDesignerCore(
       return;
     }
     if (isViewerMode) {
+      if (hasMissingViewerRequiredFields) {
+        setViewerSaveAttempted(true);
+        return;
+      }
+      setViewerSaveAttempted(false);
       viewerFieldValuesDirtyRef.current = false;
       commitDataJson(viewerFieldValues, {
         runSaveAction: true,
@@ -4318,6 +4412,7 @@ export default function PdfDesignerCore(
     isReadOnlyMode,
     isViewerMode,
     commitDataJson,
+    hasMissingViewerRequiredFields,
     viewerFieldValues,
     commitTemplate
   ]);
@@ -4368,41 +4463,53 @@ export default function PdfDesignerCore(
       return;
     }
     const totalPages = doc.numPages;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      return;
-    }
-    printWindow.document.write(
-      "<!DOCTYPE html><html><head><title>Print</title><style>" +
-        "html,body{margin:0;padding:0}" +
-        "canvas{display:block;page-break-after:always;margin:0 auto}" +
-        "canvas:last-child{page-break-after:avoid}" +
-        "@media print{@page{margin:0}body{margin:0}}" +
-        "</style></head><body></body></html>"
-    );
-    printWindow.document.close();
+    const imageDataUrls: string[] = [];
     try {
       for (let i = 1; i <= totalPages; i++) {
         const page = await doc.getPage(i);
         const viewport = page.getViewport({ scale: 2 });
-        const canvas = printWindow.document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = `${viewport.width / 2}px`;
-        canvas.style.height = `${viewport.height / 2}px`;
-        const context = canvas.getContext("2d");
+        const offscreen = document.createElement("canvas");
+        offscreen.width = viewport.width;
+        offscreen.height = viewport.height;
+        const context = offscreen.getContext("2d");
         if (!context) {
           continue;
         }
-        printWindow.document.body.appendChild(canvas);
         await page.render({ canvasContext: context, viewport }).promise;
+        imageDataUrls.push(offscreen.toDataURL("image/png"));
       }
-      printWindow.focus();
-      printWindow.print();
-      printWindow.close();
     } catch (_error) {
-      printWindow.close();
+      return;
     }
+    if (imageDataUrls.length === 0) {
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      return;
+    }
+    const imgTags = imageDataUrls
+      .map(
+        (url) =>
+          '<img src="' +
+          url +
+          '" style="width:100%;height:auto;display:block" />'
+      )
+      .join("");
+    printWindow.document.write(
+      "<!DOCTYPE html><html><head><title>Print</title><style>" +
+        "html,body{margin:0;padding:0}" +
+        "img{page-break-after:always}" +
+        "img:last-child{page-break-after:avoid}" +
+        "@media print{@page{margin:0}body{margin:0}}" +
+        "</style></head><body>" +
+        imgTags +
+        "</body></html>"
+    );
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   }, [pdfDoc]);
 
   const reorderFieldListItem = useCallback(
@@ -4969,10 +5076,23 @@ export default function PdfDesignerCore(
   }
 
   if (isViewerMode || isReadOnlyMode) {
+    const useScrollableDocumentLayout = isViewerMode || isReadOnlyMode;
     return (
       <div className={className} style={props.style} tabIndex={props.tabIndex}>
-        <div className="pdf-template-designer__canvas">
-          <div className="pdf-template-designer__toolbar">
+        <div
+          className={`pdf-template-designer__canvas${
+            useScrollableDocumentLayout
+              ? " pdf-template-designer__canvas--viewer"
+              : ""
+          }`}
+        >
+          <div
+            className={`pdf-template-designer__toolbar${
+              useScrollableDocumentLayout
+                ? " pdf-template-designer__toolbar--sticky"
+                : ""
+            }`}
+          >
             <div className="pdf-template-designer__toolbar-group">
               <button
                 className="pdf-template-designer__button"
@@ -5078,13 +5198,25 @@ export default function PdfDesignerCore(
               Data JSON is invalid. {dataJsonError}
             </div>
           ) : null}
+          {isViewerMode && viewerValidationMessage ? (
+            <div className="pdf-template-designer__alert">
+              {viewerValidationMessage}
+            </div>
+          ) : null}
           {isViewerMode && viewerSignatureMessage ? (
             <div className="pdf-template-designer__alert">
               {viewerSignatureMessage}
             </div>
           ) : null}
 
-          <div className="pdf-template-designer__viewer" ref={viewerRef}>
+          <div
+            className={`pdf-template-designer__viewer${
+              useScrollableDocumentLayout
+                ? " pdf-template-designer__viewer--scrolling"
+                : ""
+            }`}
+            ref={viewerRef}
+          >
             {!basePdfId ? (
               <div className="pdf-template-designer__status">
                 No base PDF linked.
@@ -5124,6 +5256,11 @@ export default function PdfDesignerCore(
                         key={field.id}
                         className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
                           field.type
+                        }${
+                          viewerSaveAttempted &&
+                          missingViewerRequiredFieldIds.has(field.id)
+                            ? " is-required-missing"
+                            : ""
                         }${
                           activeViewerSignatureFieldId === field.id
                             ? " is-active"

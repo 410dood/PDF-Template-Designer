@@ -44,11 +44,12 @@
      - `Data JSON` bound to `ClientDocument.DataJson`
      - `Base PDF datasource` bound to the base template file
    - User edits/signs in overlay controls; widget auto-syncs to `ClientDocument.DataJson`.
+   - Viewer Save blocks until fields marked `required` in the template are filled.
    - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF form field values.
    - Set `Status = InReview` while editing.
 3. `ACT_ClientDocument_FinalizeFromDataJson`
    - Input: `ClientDocument`.
-   - Validate `DataJson` and required fields.
+   - Viewer save already validates required fields selected in the template.
    - Call `GenerateFlattenedPdf(basePdf, templateJsonSnapshot, dataJson, clientDocumentOutputFile)`.
    - Ensure template output mode for final generation is `flattened`.
    - Set `Status = Finalized`, set `FinalizedDate/FinalizedBy`, commit.

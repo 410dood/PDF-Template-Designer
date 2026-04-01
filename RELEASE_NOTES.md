@@ -1,8 +1,10 @@
 # Release Notes
 
-## Unreleased (post v0.1.9)
+## 0.1.13 - 2026-04-01
 
 ### Fixes
+- Added viewer-only required-field validation on Save so configured required fields must be filled before a template can be saved.
+- Kept Viewer and Read-only mode on a shared scrollable-document layout with a sticky toolbar for modal use.
 - Eliminated Java action drift by converting `GenerateFlattenedPdfDelegate` into a thin wrapper that delegates to `GenerateFlattenedPdf`.
 - Improved viewer date/time behavior:
   - time-only date formats now use a time input path

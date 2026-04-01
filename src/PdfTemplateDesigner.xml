@@ -380,7 +380,7 @@
                 <caption>Show property: Label</caption>
                 <description>Show or hide the Label editor in Field properties.</description>
             </property>
-            <property key="showPropertyShowLabel" type="boolean" defaultValue="true" required="true">
+            <property key="showPropertyShowLabel" type="boolean" defaultValue="false" required="true">
                 <caption>Show property: Show label toggle</caption>
                 <description>Show or hide the flattened output label visibility toggle.</description>
             </property>
