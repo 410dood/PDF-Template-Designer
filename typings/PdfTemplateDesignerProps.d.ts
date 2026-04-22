@@ -20,6 +20,10 @@ export type ViewModeEnum = "designer" | "viewer" | "readOnly";
 
 export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
+export type SaveButtonRenderModeEnum = "button" | "link";
+
+export type SaveButtonStyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
 export type CustomActionButton1RenderModeEnum = "button" | "link";
 
 export type CustomActionButton1StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
@@ -57,8 +61,24 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    saveButtonText: string;
     showPrintButton: boolean;
+    showHeaderCheckbox: boolean;
+    headerCheckboxAttribute?: EditableValue<boolean>;
+    headerCheckboxLabel: string;
+    headerCheckboxShowLabel: boolean;
+    headerCheckboxVisible?: DynamicValue<boolean>;
+    headerCheckboxEditable?: DynamicValue<boolean>;
+    headerCheckboxOnChangeAction?: ActionValue;
+    showSaveButton: boolean;
+    saveButtonText: string;
+    saveButtonTooltip: string;
+    saveButtonIcon?: DynamicValue<WebIcon>;
+    saveButtonRenderMode: SaveButtonRenderModeEnum;
+    saveButtonStyle: SaveButtonStyleEnum;
+    saveButtonTabIndex: number;
+    saveButtonVisible?: DynamicValue<boolean>;
+    saveButtonEnabled: boolean;
+    saveButtonAction?: ActionValue;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Tooltip: string;
@@ -146,8 +166,24 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
-    saveButtonText: string;
     showPrintButton: boolean;
+    showHeaderCheckbox: boolean;
+    headerCheckboxAttribute: string;
+    headerCheckboxLabel: string;
+    headerCheckboxShowLabel: boolean;
+    headerCheckboxVisible: string;
+    headerCheckboxEditable: string;
+    headerCheckboxOnChangeAction: {} | null;
+    showSaveButton: boolean;
+    saveButtonText: string;
+    saveButtonTooltip: string;
+    saveButtonIcon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    saveButtonRenderMode: SaveButtonRenderModeEnum;
+    saveButtonStyle: SaveButtonStyleEnum;
+    saveButtonTabIndex: number | null;
+    saveButtonVisible: string;
+    saveButtonEnabled: boolean;
+    saveButtonAction: {} | null;
     showCustomActionButton1: boolean;
     customActionButton1Text: string;
     customActionButton1Tooltip: string;

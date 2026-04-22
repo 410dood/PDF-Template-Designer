@@ -32,10 +32,11 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - Palette field visibility toggles (booleans, default `true`, category `Palette fields`): hide/show individual palette tools (Text, Multi-variable text, Signature, Table, Line, Rectangle, Circle, Image, Link, Signature pad, QR code, Date, Time, Select, Checkbox, Radio, Barcode, Wide barcode).
 - Field property visibility toggles (booleans, default `true`): hide/show each row in the Field properties card:
   - `Key`, `Label`, `Show label toggle`, `Type`, `Page`, `Position`, `Size`, `Font size`, `Alignment`, `Required`, `Duplicate button`, `Delete button`.
-- `Save button text` (string, optional): custom toolbar text for the save action button (defaults to `Save JSON`).
+- `Header checkbox` settings: optional toolbar checkbox bound to a Boolean attribute on the widget context object, with label/show-label, visibility, editability, and change-action options.
+- `Save button` settings: the save action now has the same toolbar presentation options as custom buttons, including show/hide, caption, tooltip, icon, render mode, style, tab index, visibility expression, enabled state, and an optional post-save action.
 - `View mode` (enumeration): `Designer` (full template editor), `Viewer` (read/fill mode with interactive overlay fields), or `Read-only PDF` (PDF viewer only, no overlay fields).
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
-- `On save`: optional microflow to commit the updated TemplateJson.
+- `On save`: optional legacy post-save action under `Template definition`. If `Save button action` is configured, it takes precedence.
 
 **Field key schema JSON (JSON Schema) example**
 ```json

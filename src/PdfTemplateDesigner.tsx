@@ -63,7 +63,30 @@ export interface PdfDesignerCoreProps {
   showPropertyRequired?: boolean;
   showPropertyDuplicateAction?: boolean;
   showPropertyDeleteAction?: boolean;
+  showHeaderCheckbox?: boolean;
+  headerCheckboxAttribute?: EditableValue<boolean>;
+  headerCheckboxLabel?: string;
+  headerCheckboxShowLabel?: boolean;
+  headerCheckboxVisible?: DynamicValue<boolean>;
+  headerCheckboxEditable?: DynamicValue<boolean>;
+  headerCheckboxOnChangeAction?: ActionValue;
+  showSaveButton?: boolean;
   saveButtonText?: string;
+  saveButtonTooltip?: string;
+  saveButtonIcon?: IconValue;
+  saveButtonRenderMode?: "button" | "link";
+  saveButtonStyle?:
+    | "default"
+    | "primary"
+    | "success"
+    | "info"
+    | "warning"
+    | "danger"
+    | "link";
+  saveButtonTabIndex?: number;
+  saveButtonVisible?: DynamicValue<boolean>;
+  saveButtonEnabled?: boolean;
+  saveButtonAction?: ActionValue;
   showPrintButton?: boolean;
   showCustomActionButton1?: boolean;
   customActionButton1Text?: string;
@@ -167,6 +190,18 @@ interface KeyOption {
   options?: string[];
 }
 
+interface ToolbarButtonConfig {
+  key: string;
+  visible: boolean;
+  text: string;
+  tooltip?: string;
+  icon?: IconValue;
+  className: string;
+  tabIndex?: number;
+  disabled: boolean;
+  onClick: () => void;
+}
+
 interface TemplateField {
   id: string;
   key: string;
@@ -262,7 +297,8 @@ interface InlineSignatureCanvasProps {
   width: number;
   height: number;
   onChange: (value: string) => void;
-  onFocus?: () => void;
+  onFocus?: (canvas: HTMLCanvasElement) => void;
+  placeholderText?: string;
 }
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 612, height: 792 };
@@ -1890,6 +1926,105 @@ function rasterizeImageDataUrlToPng(dataUrl: string): Promise<string> {
   });
 }
 
+function renderTypedSignatureDataUrl(
+  text: string,
+  width: number,
+  height: number
+): string {
+  if (typeof document === "undefined") {
+    return "";
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const safeWidth = Math.max(160, Math.round(width * 2));
+  const safeHeight = Math.max(72, Math.round(height * 2));
+  const canvas = document.createElement("canvas");
+  canvas.width = safeWidth;
+  canvas.height = safeHeight;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return "";
+  }
+
+  context.clearRect(0, 0, safeWidth, safeHeight);
+  context.fillStyle = "#111827";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = `${Math.max(
+    28,
+    Math.round(safeHeight * 0.56)
+  )}px "Segoe Script", "Snell Roundhand", "Brush Script MT", "Lucida Handwriting", cursive`;
+  context.fillText(trimmed, safeWidth / 2, safeHeight / 2, safeWidth - 24);
+
+  return canvas.toDataURL("image/png");
+}
+
+function exportCanvasToNormalizedPng(canvas: HTMLCanvasElement): string {
+  const targetWidth = Math.max(
+    1,
+    Math.round(canvas.clientWidth || parseFloat(canvas.style.width) || canvas.width)
+  );
+  const targetHeight = Math.max(
+    1,
+    Math.round(
+      canvas.clientHeight || parseFloat(canvas.style.height) || canvas.height
+    )
+  );
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = targetWidth;
+  exportCanvas.height = targetHeight;
+  const exportContext = exportCanvas.getContext("2d");
+  if (!exportContext) {
+    return canvas.toDataURL("image/png");
+  }
+  exportContext.clearRect(0, 0, targetWidth, targetHeight);
+  exportContext.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+  return exportCanvas.toDataURL("image/png");
+}
+
+function drawSignatureImageOnCanvas(
+  canvas: HTMLCanvasElement,
+  value?: string
+): Promise<void> {
+  if (!value) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const context = canvas.getContext("2d");
+    if (!context) {
+      resolve();
+      return;
+    }
+
+    const targetWidth = Math.max(
+      1,
+      Math.round(
+        canvas.clientWidth || parseFloat(canvas.style.width) || canvas.width
+      )
+    );
+    const targetHeight = Math.max(
+      1,
+      Math.round(
+        canvas.clientHeight || parseFloat(canvas.style.height) || canvas.height
+      )
+    );
+    const image = new Image();
+    image.onload = () => {
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+      resolve();
+    };
+    image.onerror = () => resolve();
+    image.src = value;
+  });
+}
+
 function getSigWebPointCount(globalObject: any): number | undefined {
   const numberOfPointsFn = globalObject?.NumberOfTabletPoints;
   if (typeof numberOfPointsFn !== "function") {
@@ -1901,6 +2036,149 @@ function getSigWebPointCount(globalObject: any): number | undefined {
   } catch (_error) {
     return undefined;
   }
+}
+
+function getSigWebNumericValue(
+  globalObject: any,
+  functionName: string
+): number | undefined {
+  const fn = globalObject?.[functionName];
+  if (typeof fn !== "function") {
+    return undefined;
+  }
+  try {
+    const value = Number(fn());
+    return Number.isFinite(value) ? value : undefined;
+  } catch (_error) {
+    return undefined;
+  }
+}
+
+function activateSigWebTablet(globalObject: any): string | undefined {
+  const captureFunction = resolveSigWebCaptureFunction(globalObject);
+  if (!captureFunction) {
+    return "SigWeb capture function was not found. Verify that SigWebTablet.js is loaded.";
+  }
+
+  const setTabletState = globalObject?.SetTabletState;
+  if (typeof setTabletState === "function") {
+    try {
+      setTabletState(1);
+    } catch (_error) {
+      return "SigWeb is installed, but the tablet service could not be started. Verify the Topaz service is running and allow the browser permission prompt if shown.";
+    }
+  }
+
+  const tabletState = getSigWebNumericValue(globalObject, "GetTabletState");
+  if (tabletState !== undefined && tabletState !== 1) {
+    return "SigWeb did not report an active tablet connection. Verify the Topaz pad is connected, the SigWeb service is running, and the browser's Local Network Access prompt was allowed.";
+  }
+
+  return undefined;
+}
+
+function deactivateSigWebTablet(globalObject: any): void {
+  callOptionalSigWebFunction(globalObject, "SetTabletState", 0);
+}
+
+function clearSigWebTablet(globalObject: any): void {
+  callOptionalSigWebFunction(globalObject, "ClearTablet");
+  callOptionalSigWebFunction(globalObject, "ClearSigWindow", 1);
+  callOptionalSigWebFunction(globalObject, "ClearSigWindow", 0);
+}
+
+function clearSignatureCanvasElement(canvas: HTMLCanvasElement): void {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function prepareCanvasForSigWebCapture(canvas: HTMLCanvasElement): void {
+  const targetWidth = Math.max(
+    1,
+    Math.round(canvas.clientWidth || parseFloat(canvas.style.width) || canvas.width)
+  );
+  const targetHeight = Math.max(
+    1,
+    Math.round(
+      canvas.clientHeight || parseFloat(canvas.style.height) || canvas.height
+    )
+  );
+  const sizeChanged = canvas.width !== targetWidth || canvas.height !== targetHeight;
+  if (canvas.width !== targetWidth) {
+    canvas.width = targetWidth;
+  }
+  if (canvas.height !== targetHeight) {
+    canvas.height = targetHeight;
+  }
+  canvas.style.width = `${targetWidth}px`;
+  canvas.style.height = `${targetHeight}px`;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  if (sizeChanged) {
+    context.clearRect(0, 0, targetWidth, targetHeight);
+  }
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.lineWidth = Math.max(1.5, targetHeight * 0.05);
+  context.strokeStyle = "#111827";
+  context.fillStyle = "#111827";
+}
+
+function startSigWebLiveCapture(
+  globalObject: any,
+  canvas: HTMLCanvasElement,
+  clearExisting: boolean
+): { timer?: unknown; error?: string } {
+  const context = canvas.getContext("2d");
+  const setTabletState = globalObject?.SetTabletState;
+  if (!context || typeof setTabletState !== "function") {
+    return {
+      error:
+        "SigWeb live capture could not start because the signature canvas is unavailable."
+    };
+  }
+
+  prepareCanvasForSigWebCapture(canvas);
+  if (clearExisting) {
+    clearSignatureCanvasElement(canvas);
+  }
+
+  try {
+    const timer = setTabletState(1, context, 50);
+    const tabletState = getSigWebNumericValue(globalObject, "GetTabletState");
+    if (tabletState !== undefined && tabletState !== 1) {
+      return {
+        error:
+          "SigWeb did not report an active tablet connection. Verify the Topaz pad is connected and the browser permission prompt was allowed."
+      };
+    }
+    return { timer };
+  } catch (_error) {
+    return {
+      error:
+        "SigWeb live capture could not start. Verify the Topaz service is running and the browser is allowed to access it."
+    };
+  }
+}
+
+function stopSigWebLiveCapture(globalObject: any, timer?: unknown): void {
+  const setTabletState = globalObject?.SetTabletState;
+  if (typeof setTabletState === "function" && timer !== undefined) {
+    try {
+      setTabletState(0, timer);
+      return;
+    } catch (_error) {
+      // Fall back to standard deactivation below.
+    }
+  }
+  deactivateSigWebTablet(globalObject);
 }
 
 function callOptionalSigWebFunction(
@@ -1929,17 +2207,6 @@ function applySigWebImageDefaults(globalObject: any): void {
 function captureSignatureFromSigWeb(
   captureFunction: SigWebCaptureFunction
 ): Promise<string | undefined> {
-  const immediateResult = (() => {
-    try {
-      return normalizeSignatureImageFromUnknown(captureFunction());
-    } catch (_error) {
-      return undefined;
-    }
-  })();
-  if (immediateResult) {
-    return Promise.resolve(immediateResult);
-  }
-
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result?: unknown) => {
@@ -1957,11 +2224,7 @@ function captureSignatureFromSigWeb(
     };
 
     try {
-      const result = captureFunction(callback);
-      if (result !== undefined) {
-        clearTimeout(timeoutId);
-        finish(result);
-      }
+      captureFunction(callback);
     } catch (_error) {
       clearTimeout(timeoutId);
       finish(undefined);
@@ -2285,9 +2548,17 @@ function isViewerRequiredFieldMissing(
 function InlineSignatureCanvas(
   props: InlineSignatureCanvasProps
 ): ReactElement {
-  const { value, width, height, onChange, onFocus } = props;
+  const {
+    value,
+    width,
+    height,
+    onChange,
+    onFocus,
+    placeholderText
+  } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
+  const movedRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
   const drawValue = useCallback(() => {
@@ -2298,12 +2569,8 @@ function InlineSignatureCanvas(
 
     const safeWidth = Math.max(20, Math.round(width));
     const safeHeight = Math.max(20, Math.round(height));
-    const ratio =
-      typeof window !== "undefined" && window.devicePixelRatio
-        ? window.devicePixelRatio
-        : 1;
-    canvas.width = Math.max(1, Math.round(safeWidth * ratio));
-    canvas.height = Math.max(1, Math.round(safeHeight * ratio));
+    canvas.width = Math.max(1, safeWidth);
+    canvas.height = Math.max(1, safeHeight);
     canvas.style.width = `${safeWidth}px`;
     canvas.style.height = `${safeHeight}px`;
     const context = canvas.getContext("2d");
@@ -2313,7 +2580,6 @@ function InlineSignatureCanvas(
 
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.scale(ratio, ratio);
     context.lineJoin = "round";
     context.lineCap = "round";
     context.lineWidth = Math.max(1.5, safeHeight * 0.05);
@@ -2329,7 +2595,6 @@ function InlineSignatureCanvas(
         }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.scale(ratio, ratio);
         ctx.drawImage(image, 0, 0, safeWidth, safeHeight);
       };
       image.src = value;
@@ -2355,7 +2620,7 @@ function InlineSignatureCanvas(
     if (!canvas) {
       return;
     }
-    onChange(canvas.toDataURL("image/png"));
+    onChange(exportCanvasToNormalizedPng(canvas));
   }, [onChange]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -2364,23 +2629,14 @@ function InlineSignatureCanvas(
     if (!canvas || !context) {
       return;
     }
-    onFocus?.();
+    onFocus?.(canvas);
     event.preventDefault();
     event.stopPropagation();
     canvas.setPointerCapture(event.pointerId);
     drawingRef.current = true;
+    movedRef.current = false;
     const point = pointFromEvent(event);
     lastPointRef.current = point;
-    context.beginPath();
-    context.moveTo(point.x, point.y);
-    context.arc(
-      point.x,
-      point.y,
-      Math.max(1, context.lineWidth * 0.45),
-      0,
-      Math.PI * 2
-    );
-    context.fill();
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -2395,6 +2651,7 @@ function InlineSignatureCanvas(
     }
     event.preventDefault();
     const point = pointFromEvent(event);
+    movedRef.current = true;
     context.beginPath();
     context.moveTo(lastPoint.x, lastPoint.y);
     context.lineTo(point.x, point.y);
@@ -2409,19 +2666,29 @@ function InlineSignatureCanvas(
     drawingRef.current = false;
     lastPointRef.current = null;
     event.preventDefault();
+    if (!movedRef.current) {
+      return;
+    }
     commitCurrentStroke();
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="pdf-template-designer__signature-canvas"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-    />
+    <div className="pdf-template-designer__signature-canvas-shell">
+      {!value && placeholderText ? (
+        <div className="pdf-template-designer__signature-placeholder">
+          {placeholderText}
+        </div>
+      ) : null}
+      <canvas
+        ref={canvasRef}
+        className="pdf-template-designer__signature-canvas"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      />
+    </div>
   );
 }
 
@@ -2520,13 +2787,19 @@ export default function PdfDesignerCore(
   const showPropertyDuplicateAction =
     props.showPropertyDuplicateAction !== false;
   const showPropertyDeleteAction = props.showPropertyDeleteAction !== false;
+  const showHeaderCheckbox = props.showHeaderCheckbox === true;
+  const headerCheckboxLabel =
+    (props.headerCheckboxLabel || "").trim() || "Checkbox";
+  const headerCheckboxShowLabel = props.headerCheckboxShowLabel !== false;
+  const showSaveButton = props.showSaveButton !== false;
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
+  const saveButtonTooltip = (props.saveButtonTooltip || "").trim();
   const showPrintButton = props.showPrintButton === true;
   const viewMode = normalizeViewMode((props as any).viewMode);
   const isViewerMode = viewMode === "viewer";
   const isReadOnlyMode = viewMode === "readOnly";
   const customActionButtons = useMemo(
-    () =>
+    (): ToolbarButtonConfig[] =>
       [
         {
           key: "custom-action-1",
@@ -2546,8 +2819,10 @@ export default function PdfDesignerCore(
             typeof props.customActionButton1TabIndex === "number"
               ? props.customActionButton1TabIndex
               : undefined,
-          enabled: props.customActionButton1Enabled !== false,
-          action: props.customActionButton1Action
+          disabled:
+            props.customActionButton1Enabled === false ||
+            !props.customActionButton1Action?.canExecute,
+          onClick: () => props.customActionButton1Action?.execute()
         },
         {
           key: "custom-action-2",
@@ -2567,8 +2842,10 @@ export default function PdfDesignerCore(
             typeof props.customActionButton2TabIndex === "number"
               ? props.customActionButton2TabIndex
               : undefined,
-          enabled: props.customActionButton2Enabled !== false,
-          action: props.customActionButton2Action
+          disabled:
+            props.customActionButton2Enabled === false ||
+            !props.customActionButton2Action?.canExecute,
+          onClick: () => props.customActionButton2Action?.execute()
         },
         {
           key: "custom-action-3",
@@ -2588,8 +2865,10 @@ export default function PdfDesignerCore(
             typeof props.customActionButton3TabIndex === "number"
               ? props.customActionButton3TabIndex
               : undefined,
-          enabled: props.customActionButton3Enabled !== false,
-          action: props.customActionButton3Action
+          disabled:
+            props.customActionButton3Enabled === false ||
+            !props.customActionButton3Action?.canExecute,
+          onClick: () => props.customActionButton3Action?.execute()
         }
       ].filter((item) => item.visible),
     [
@@ -2668,6 +2947,13 @@ export default function PdfDesignerCore(
   const lastLoadedDataJsonRef = useRef<string | undefined>(undefined);
   const lastParsedDataJsonRef = useRef<Record<string, unknown>>({});
   const viewerFieldValuesDirtyRef = useRef(false);
+  const activeSigWebCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeSigWebFieldKeyRef = useRef<string | null>(null);
+  const sigWebLiveTimerRef = useRef<unknown>(undefined);
+  const sigWebEventTimerRef = useRef<number | null>(null);
+  const previousSigWebPenUpHandlerRef = useRef<unknown>(undefined);
+  const isPersistingSigWebRef = useRef(false);
+  const persistSigWebCanvasValueRef = useRef<(() => void) | null>(null);
 
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -2696,6 +2982,8 @@ export default function PdfDesignerCore(
   >({});
   const [activeViewerSignatureFieldId, setActiveViewerSignatureFieldId] =
     useState<string | null>(null);
+  const [showTypedSignatureEditor, setShowTypedSignatureEditor] = useState(false);
+  const [typedSignatureDraft, setTypedSignatureDraft] = useState("");
   const [viewerSignatureMessage, setViewerSignatureMessage] = useState<
     string | null
   >(null);
@@ -2720,6 +3008,7 @@ export default function PdfDesignerCore(
     () => props.dataSource?.[0],
     [props.dataSource]
   );
+  const configuredSaveAction = props.saveButtonAction ?? dataSourceItem?.onSaveAction;
   const fieldKeySourceMode: FieldKeySourceMode = isFieldKeySourceMode(
     props.fieldKeySourceMode
   )
@@ -2823,10 +3112,34 @@ export default function PdfDesignerCore(
       return;
     }
 
+    const initializeSigWeb = () => {
+      const activationError = activateSigWebTablet(window as any);
+      if (activationError) {
+        setSigWebState("error");
+        setSigWebError(activationError);
+        return;
+      }
+      setSigWebState("ready");
+      setSigWebError(null);
+    };
+
     const existingCaptureFunction = resolveSigWebCaptureFunction(window as any);
     if (!configuredSigWebUrl) {
-      setSigWebState(existingCaptureFunction ? "ready" : "idle");
-      setSigWebError(null);
+      if (existingCaptureFunction) {
+        initializeSigWeb();
+        return () => {
+          if (sigWebEventTimerRef.current !== null) {
+            window.clearInterval(sigWebEventTimerRef.current);
+            sigWebEventTimerRef.current = null;
+          }
+          (window as any).onSigPenUp = previousSigWebPenUpHandlerRef.current;
+          stopSigWebLiveCapture(window as any, sigWebLiveTimerRef.current);
+          sigWebLiveTimerRef.current = undefined;
+        };
+      } else {
+        setSigWebState("idle");
+        setSigWebError(null);
+      }
       return;
     }
 
@@ -2846,8 +3159,7 @@ export default function PdfDesignerCore(
           );
           return;
         }
-        setSigWebState("ready");
-        setSigWebError(null);
+        initializeSigWeb();
       })
       .catch((error) => {
         if (cancelled) {
@@ -2863,6 +3175,13 @@ export default function PdfDesignerCore(
 
     return () => {
       cancelled = true;
+      if (sigWebEventTimerRef.current !== null) {
+        window.clearInterval(sigWebEventTimerRef.current);
+        sigWebEventTimerRef.current = null;
+      }
+      (window as any).onSigPenUp = previousSigWebPenUpHandlerRef.current;
+      stopSigWebLiveCapture(window as any, sigWebLiveTimerRef.current);
+      sigWebLiveTimerRef.current = undefined;
     };
   }, [isViewerMode, configuredSigWebUrl, sigWebUrlResolution.isLoading]);
 
@@ -3408,6 +3727,29 @@ export default function PdfDesignerCore(
     []
   );
 
+  const handleHeaderCheckboxChange = useCallback(
+    (nextChecked: boolean) => {
+      const attribute = props.headerCheckboxAttribute;
+      if (!attribute || attribute.status !== "available" || attribute.readOnly) {
+        return;
+      }
+
+      try {
+        attribute.setValue(nextChecked);
+      } catch (error) {
+        console.warn("Failed to update header checkbox attribute.", error);
+        return;
+      }
+
+      runConfiguredAction(props.headerCheckboxOnChangeAction);
+    },
+    [
+      props.headerCheckboxAttribute,
+      props.headerCheckboxOnChangeAction,
+      runConfiguredAction
+    ]
+  );
+
   const commitDataJson = useCallback(
     (
       nextViewerValues: Record<string, ViewerFieldValue>,
@@ -3445,10 +3787,10 @@ export default function PdfDesignerCore(
       }
 
       if (runSaveAction) {
-        runConfiguredAction(dataSourceItem?.onSaveAction);
+        runConfiguredAction(configuredSaveAction);
       }
     },
-    [dataSourceItem, runConfiguredAction]
+    [dataSourceItem, configuredSaveAction, runConfiguredAction]
   );
 
   useEffect(() => {
@@ -3490,10 +3832,10 @@ export default function PdfDesignerCore(
       }
 
       if (runSaveAction) {
-        runConfiguredAction(dataSourceItem?.onSaveAction);
+        runConfiguredAction(configuredSaveAction);
       }
     },
-    [dataSourceItem, basePdfId, runConfiguredAction]
+    [dataSourceItem, basePdfId, configuredSaveAction, runConfiguredAction]
   );
 
   const viewerTemplateValues = useMemo(
@@ -4416,6 +4758,89 @@ export default function PdfDesignerCore(
     viewerFieldValues,
     commitTemplate
   ]);
+  const saveToolbarButton = useMemo<ToolbarButtonConfig | null>(() => {
+    if (
+      isReadOnlyMode ||
+      !showSaveButton ||
+      !resolveBooleanProperty(props.saveButtonVisible, true)
+    ) {
+      return null;
+    }
+
+    return {
+      key: "save",
+      visible: true,
+      text: saveButtonText,
+      tooltip: saveButtonTooltip || undefined,
+      icon: props.saveButtonIcon,
+      className: getToolbarButtonClassName(
+        normalizeToolbarButtonRenderMode(props.saveButtonRenderMode),
+        normalizeToolbarButtonStyle(props.saveButtonStyle ?? "primary")
+      ),
+      tabIndex:
+        typeof props.saveButtonTabIndex === "number"
+          ? props.saveButtonTabIndex
+          : undefined,
+      disabled: props.saveButtonEnabled === false,
+      onClick: handleSaveClick
+    };
+  }, [
+    isReadOnlyMode,
+    showSaveButton,
+    props.saveButtonVisible,
+    saveButtonText,
+    saveButtonTooltip,
+    props.saveButtonIcon,
+    props.saveButtonRenderMode,
+    props.saveButtonStyle,
+    props.saveButtonTabIndex,
+    props.saveButtonEnabled,
+    handleSaveClick
+  ]);
+  const toolbarActionButtons = useMemo(
+    () =>
+      saveToolbarButton
+        ? [saveToolbarButton, ...customActionButtons]
+        : customActionButtons,
+    [customActionButtons, saveToolbarButton]
+  );
+  const headerCheckboxControl = useMemo<ReactElement | null>(() => {
+    const attribute = props.headerCheckboxAttribute;
+    if (
+      !showHeaderCheckbox ||
+      !resolveBooleanProperty(props.headerCheckboxVisible, true) ||
+      !attribute ||
+      attribute.status !== "available"
+    ) {
+      return null;
+    }
+
+    const disabled =
+      attribute.readOnly ||
+      !resolveBooleanProperty(props.headerCheckboxEditable, true);
+
+    return (
+      <label className="pdf-template-designer__header-checkbox">
+        <input
+          type="checkbox"
+          checked={Boolean(attribute.value)}
+          disabled={disabled}
+          onChange={(event) => handleHeaderCheckboxChange(event.target.checked)}
+        />
+        {headerCheckboxShowLabel ? (
+          <span>{headerCheckboxLabel}</span>
+        ) : null}
+      </label>
+    );
+  }, [
+    showHeaderCheckbox,
+    props.headerCheckboxVisible,
+    props.headerCheckboxAttribute,
+    props.headerCheckboxEditable,
+    headerCheckboxShowLabel,
+    headerCheckboxLabel,
+    handleHeaderCheckboxChange
+  ]);
 
   const handleReloadTemplateClick = useCallback(() => {
     if (isViewerMode || isReadOnlyMode) {
@@ -4691,10 +5116,197 @@ export default function PdfDesignerCore(
 
   const clearViewerSignature = useCallback(
     (fieldKey: string) => {
+      if (typeof window !== "undefined") {
+        stopSigWebLiveCapture(window as any, sigWebLiveTimerRef.current);
+        sigWebLiveTimerRef.current = undefined;
+        if (sigWebEventTimerRef.current !== null) {
+          window.clearInterval(sigWebEventTimerRef.current);
+          sigWebEventTimerRef.current = null;
+        }
+        (window as any).onSigPenUp = previousSigWebPenUpHandlerRef.current;
+      }
+      if (typeof window !== "undefined") {
+        clearSigWebTablet(window as any);
+      }
+      if (activeSigWebCanvasRef.current) {
+        clearSignatureCanvasElement(activeSigWebCanvasRef.current);
+      }
+      setShowTypedSignatureEditor(false);
+      setTypedSignatureDraft("");
       setViewerFieldValue(fieldKey, "");
       setViewerSignatureMessage(null);
     },
     [setViewerFieldValue]
+  );
+
+  const stopSigWebForActiveField = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (sigWebEventTimerRef.current !== null) {
+      window.clearInterval(sigWebEventTimerRef.current);
+      sigWebEventTimerRef.current = null;
+    }
+    (window as any).onSigPenUp = previousSigWebPenUpHandlerRef.current;
+    stopSigWebLiveCapture(window as any, sigWebLiveTimerRef.current);
+    sigWebLiveTimerRef.current = undefined;
+  }, []);
+
+  const rearmSigWebForActiveField = useCallback(
+    (fieldKey: string, value: string) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const globalObject = window as any;
+      const activeCanvas = activeSigWebCanvasRef.current;
+      if (!activeCanvas || activeSigWebFieldKeyRef.current !== fieldKey) {
+        return;
+      }
+
+      const liveCapture = startSigWebLiveCapture(globalObject, activeCanvas, false);
+      if (liveCapture.error) {
+        setSigWebState("error");
+        setSigWebError(liveCapture.error);
+        return;
+      }
+      sigWebLiveTimerRef.current = liveCapture.timer;
+      drawSignatureImageOnCanvas(activeCanvas, value).then(() => {
+        previousSigWebPenUpHandlerRef.current = globalObject.onSigPenUp;
+        globalObject.onSigPenUp = () => {
+          persistSigWebCanvasValueRef.current?.();
+        };
+        if (typeof globalObject.SigWebEvent === "function") {
+          sigWebEventTimerRef.current = window.setInterval(() => {
+            try {
+              globalObject.SigWebEvent();
+            } catch (_error) {
+              // Ignore intermittent SigWeb event polling failures.
+            }
+          }, 20);
+        }
+        setSigWebState("ready");
+        setSigWebError(null);
+      });
+    },
+    []
+  );
+
+  const persistSigWebCanvasValue = useCallback(() => {
+    if (isPersistingSigWebRef.current) {
+      return;
+    }
+    isPersistingSigWebRef.current = true;
+    const fieldKey = activeSigWebFieldKeyRef.current;
+    const canvas = activeSigWebCanvasRef.current;
+    if (!fieldKey || !canvas) {
+      isPersistingSigWebRef.current = false;
+      return;
+    }
+    const globalObject = typeof window !== "undefined" ? (window as any) : null;
+    const pointCount = globalObject ? getSigWebPointCount(globalObject) : undefined;
+    if (pointCount !== undefined && pointCount <= 0) {
+      isPersistingSigWebRef.current = false;
+      return;
+    }
+    stopSigWebForActiveField();
+    const persistedValue = exportCanvasToNormalizedPng(canvas);
+    setViewerFieldValue(fieldKey, persistedValue);
+    setViewerSignatureMessage(null);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        isPersistingSigWebRef.current = false;
+        rearmSigWebForActiveField(fieldKey, persistedValue);
+      }, 0);
+    } else {
+      isPersistingSigWebRef.current = false;
+    }
+  }, [setViewerFieldValue, stopSigWebForActiveField, rearmSigWebForActiveField]);
+
+  useEffect(() => {
+    persistSigWebCanvasValueRef.current = persistSigWebCanvasValue;
+    return () => {
+      persistSigWebCanvasValueRef.current = null;
+    };
+  }, [persistSigWebCanvasValue]);
+
+  const prepareSigWebForField = useCallback(
+    (
+      fieldKey: string,
+      canvas?: HTMLCanvasElement | null,
+      preserveExistingContent = false,
+      existingValue?: string
+    ): Promise<string | undefined> => {
+      if (typeof window === "undefined") {
+        return Promise.resolve(undefined);
+      }
+      const globalObject = window as any;
+      if (canvas) {
+        activeSigWebCanvasRef.current = canvas;
+      }
+      activeSigWebFieldKeyRef.current = fieldKey;
+
+      stopSigWebForActiveField();
+
+      const activeCanvas = activeSigWebCanvasRef.current;
+      if (activeCanvas) {
+        const captureFunction = resolveSigWebCaptureFunction(globalObject);
+        if (!captureFunction) {
+          const captureError =
+            "SigWeb capture function was not found. Verify that SigWebTablet.js is loaded.";
+          setSigWebState("error");
+          setSigWebError(captureError);
+          return Promise.resolve(captureError);
+        }
+        const liveCapture = startSigWebLiveCapture(
+          globalObject,
+          activeCanvas,
+          !preserveExistingContent
+        );
+        if (liveCapture.error) {
+          setSigWebState("error");
+          setSigWebError(liveCapture.error);
+          return Promise.resolve(liveCapture.error);
+        }
+        sigWebLiveTimerRef.current = liveCapture.timer;
+        if (!preserveExistingContent) {
+          clearSigWebTablet(globalObject);
+        }
+        return drawSignatureImageOnCanvas(activeCanvas, existingValue).then(() => {
+          previousSigWebPenUpHandlerRef.current = globalObject.onSigPenUp;
+          globalObject.onSigPenUp = () => {
+            persistSigWebCanvasValue();
+          };
+          if (typeof globalObject.SigWebEvent === "function") {
+            sigWebEventTimerRef.current = window.setInterval(() => {
+              try {
+                globalObject.SigWebEvent();
+              } catch (_error) {
+                // Ignore intermittent SigWeb event polling failures.
+              }
+            }, 20);
+          }
+
+          setSigWebState("ready");
+          setSigWebError(null);
+          return undefined;
+        });
+      } else {
+        const activationError = activateSigWebTablet(globalObject);
+        if (activationError) {
+          setSigWebState("error");
+          setSigWebError(activationError);
+          return Promise.resolve(activationError);
+        }
+        if (!preserveExistingContent) {
+          clearSigWebTablet(globalObject);
+        }
+        sigWebLiveTimerRef.current = undefined;
+      }
+      setSigWebState("ready");
+      setSigWebError(null);
+      return Promise.resolve(undefined);
+    },
+    [persistSigWebCanvasValue, stopSigWebForActiveField]
   );
 
   const importSignatureFromSigWeb = useCallback(
@@ -4703,6 +5315,15 @@ export default function PdfDesignerCore(
         return;
       }
       const globalObject = window as any;
+      const activationError = activateSigWebTablet(globalObject);
+      if (activationError) {
+        setSigWebState("error");
+        setSigWebError(activationError);
+        setViewerSignatureMessage(activationError);
+        return;
+      }
+      setSigWebState("ready");
+      setSigWebError(null);
       const captureFunction = resolveSigWebCaptureFunction(globalObject);
       if (!captureFunction) {
         setViewerSignatureMessage(
@@ -4744,6 +5365,9 @@ export default function PdfDesignerCore(
           return;
         }
         setViewerFieldValue(fieldKey, normalizedValue);
+        clearSigWebTablet(globalObject);
+        setShowTypedSignatureEditor(false);
+        setTypedSignatureDraft("");
         setViewerSignatureMessage(null);
       } catch (error) {
         const message =
@@ -4755,6 +5379,18 @@ export default function PdfDesignerCore(
     },
     [setViewerFieldValue]
   );
+
+  const openTypedSignatureEditor = useCallback(() => {
+    stopSigWebForActiveField();
+    setShowTypedSignatureEditor(true);
+    setViewerSignatureMessage(null);
+  }, [stopSigWebForActiveField]);
+
+  const cancelTypedSignatureEditor = useCallback(() => {
+    setShowTypedSignatureEditor(false);
+    setTypedSignatureDraft("");
+    setViewerSignatureMessage(null);
+  }, []);
 
   const handlePlacementSelect = useCallback((toolId: string) => {
     setPlacementToolId((current) => (current === toolId ? null : toolId));
@@ -4785,6 +5421,43 @@ export default function PdfDesignerCore(
       ),
     [fieldsOnPage, activeViewerSignatureFieldId]
   );
+
+  useEffect(() => {
+    if (activeViewerSignatureField) {
+      return;
+    }
+    activeSigWebCanvasRef.current = null;
+    activeSigWebFieldKeyRef.current = null;
+    setShowTypedSignatureEditor(false);
+    setTypedSignatureDraft("");
+    stopSigWebForActiveField();
+  }, [activeViewerSignatureField, stopSigWebForActiveField]);
+
+  const applyTypedSignature = useCallback(() => {
+    if (!activeViewerSignatureField) {
+      return;
+    }
+
+    const renderedSignature = renderTypedSignatureDataUrl(
+      typedSignatureDraft,
+      Math.max(120, activeViewerSignatureField.w * renderScale),
+      Math.max(40, activeViewerSignatureField.h * renderScale)
+    );
+    if (!renderedSignature) {
+      setViewerSignatureMessage("Type a name before applying the signature.");
+      return;
+    }
+
+    setViewerFieldValue(activeViewerSignatureField.key, renderedSignature);
+    setShowTypedSignatureEditor(false);
+    setTypedSignatureDraft("");
+    setViewerSignatureMessage(null);
+  }, [
+    activeViewerSignatureField,
+    typedSignatureDraft,
+    renderScale,
+    setViewerFieldValue
+  ]);
 
   const renderViewerFieldControl = useCallback(
     (field: TemplateField): ReactElement => {
@@ -4818,9 +5491,25 @@ export default function PdfDesignerCore(
             width={Math.max(20, field.w * renderScale)}
             height={Math.max(20, field.h * renderScale)}
             value={signatureValue}
-            onFocus={() => {
+            placeholderText={
+              sigWebState === "ready"
+                ? "Tap here to sign on the pad or use mouse"
+                : "Tap here to sign on the pad or use mouse"
+            }
+            onFocus={(canvas) => {
               setActiveViewerSignatureFieldId(field.id);
-              setViewerSignatureMessage(null);
+              prepareSigWebForField(
+                field.key,
+                canvas,
+                Boolean(signatureValue),
+                signatureValue
+              ).then((liveCaptureError) => {
+                if (liveCaptureError) {
+                  setViewerSignatureMessage(liveCaptureError);
+                  return;
+                }
+                setViewerSignatureMessage(null);
+              });
             }}
             onChange={(nextValue) => {
               setViewerFieldValue(field.key, nextValue);
@@ -5062,7 +5751,14 @@ export default function PdfDesignerCore(
         />
       );
     },
-    [viewerFieldValues, renderScale, setViewerFieldValue, viewerTemplateValues]
+    [
+      viewerFieldValues,
+      renderScale,
+      setViewerFieldValue,
+      viewerTemplateValues,
+      sigWebState,
+      prepareSigWebForField
+    ]
   );
 
   if (!props.dataSource && !(isViewerMode || isReadOnlyMode)) {
@@ -5143,6 +5839,7 @@ export default function PdfDesignerCore(
                 <option value={1.25}>125%</option>
                 <option value={1.5}>150%</option>
               </select>
+              {headerCheckboxControl}
               {showPrintButton ? (
                 <button
                   className="pdf-template-designer__button"
@@ -5154,24 +5851,15 @@ export default function PdfDesignerCore(
                   Print
                 </button>
               ) : null}
-              {!isReadOnlyMode ? (
-                <button
-                  className="pdf-template-designer__button pdf-template-designer__button--primary"
-                  onClick={handleSaveClick}
-                  type="button"
-                >
-                  {saveButtonText}
-                </button>
-              ) : null}
-              {customActionButtons.map((button) => (
+              {toolbarActionButtons.map((button) => (
                 <button
                   key={button.key}
                   className={button.className}
                   type="button"
                   title={button.tooltip || undefined}
                   tabIndex={button.tabIndex}
-                  disabled={!button.enabled || !button.action?.canExecute}
-                  onClick={() => runConfiguredAction(button.action)}
+                  disabled={button.disabled}
+                  onClick={button.onClick}
                 >
                   {renderToolbarButtonIcon(button.icon)}
                   <span>{button.text}</span>
@@ -5288,6 +5976,9 @@ export default function PdfDesignerCore(
                             setViewerSignatureMessage(null);
                           } else if (activeViewerSignatureFieldId) {
                             setActiveViewerSignatureFieldId(null);
+                            activeSigWebCanvasRef.current = null;
+                            activeSigWebFieldKeyRef.current = null;
+                            stopSigWebForActiveField();
                           }
                         }}
                       >
@@ -5296,7 +5987,11 @@ export default function PdfDesignerCore(
                     ))}
                     {activeViewerSignatureField ? (
                       <div
-                        className="pdf-template-designer__signature-actions"
+                        className={`pdf-template-designer__signature-actions${
+                          showTypedSignatureEditor
+                            ? " pdf-template-designer__signature-actions--stacked"
+                            : ""
+                        }`}
                         style={{
                           left: activeViewerSignatureField.x * renderScale,
                           top:
@@ -5305,28 +6000,74 @@ export default function PdfDesignerCore(
                               renderScale +
                             6
                         }}
-                      >
-                        <button
-                          className="pdf-template-designer__button pdf-template-designer__button--compact"
-                          type="button"
-                          onClick={() =>
-                            clearViewerSignature(activeViewerSignatureField.key)
-                          }
                         >
-                          Clear signature
-                        </button>
-                        {sigWebState === "ready" ? (
+                        <div className="pdf-template-designer__signature-actions-row">
                           <button
                             className="pdf-template-designer__button pdf-template-designer__button--compact"
                             type="button"
                             onClick={() =>
-                              importSignatureFromSigWeb(
-                                activeViewerSignatureField.key
-                              )
+                              clearViewerSignature(activeViewerSignatureField.key)
                             }
                           >
-                            Use SigWeb
+                            Clear signature
                           </button>
+                          <button
+                            className="pdf-template-designer__button pdf-template-designer__button--compact"
+                            type="button"
+                            onClick={openTypedSignatureEditor}
+                          >
+                            Type name
+                          </button>
+                          {sigWebState === "ready" ? (
+                            <button
+                              className="pdf-template-designer__button pdf-template-designer__button--compact"
+                              type="button"
+                              onClick={() =>
+                                importSignatureFromSigWeb(
+                                  activeViewerSignatureField.key
+                                )
+                              }
+                            >
+                              Use SigWeb
+                            </button>
+                          ) : null}
+                        </div>
+                        {showTypedSignatureEditor ? (
+                          <div className="pdf-template-designer__typed-signature-editor">
+                            <input
+                              className="pdf-template-designer__input"
+                              type="text"
+                              placeholder="Type your full name"
+                              value={typedSignatureDraft}
+                              onChange={(event) =>
+                                setTypedSignatureDraft(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  applyTypedSignature();
+                                }
+                                if (event.key === "Escape") {
+                                  cancelTypedSignatureEditor();
+                                }
+                              }}
+                            />
+                            <div className="pdf-template-designer__signature-actions-row">
+                              <button
+                                className="pdf-template-designer__button pdf-template-designer__button--compact pdf-template-designer__button--primary"
+                                type="button"
+                                onClick={applyTypedSignature}
+                              >
+                                Apply typed signature
+                              </button>
+                              <button
+                                className="pdf-template-designer__button pdf-template-designer__button--compact"
+                                type="button"
+                                onClick={cancelTypedSignatureEditor}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
@@ -5468,28 +6209,29 @@ export default function PdfDesignerCore(
                   Print
                 </button>
               ) : null}
-              <button
-                className="pdf-template-designer__button pdf-template-designer__button--primary"
-                onClick={handleSaveClick}
-                type="button"
-              >
-                {saveButtonText}
-              </button>
-              {customActionButtons.map((button) => (
+              {toolbarActionButtons.map((button) => (
                 <button
                   key={button.key}
                   className={button.className}
                   type="button"
                   title={button.tooltip || undefined}
                   tabIndex={button.tabIndex}
-                  disabled={!button.enabled || !button.action?.canExecute}
-                  onClick={() => runConfiguredAction(button.action)}
+                  disabled={button.disabled}
+                  onClick={button.onClick}
                 >
                   {renderToolbarButtonIcon(button.icon)}
                   <span>{button.text}</span>
                 </button>
               ))}
             </div>
+            {headerCheckboxControl ? (
+              <div className="pdf-template-designer__action-group">
+                <span className="pdf-template-designer__action-label">
+                  Header
+                </span>
+                {headerCheckboxControl}
+              </div>
+            ) : null}
 
             <div className="pdf-template-designer__action-group">
               <span className="pdf-template-designer__action-label">View</span>
