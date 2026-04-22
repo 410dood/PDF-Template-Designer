@@ -4,27 +4,43 @@
  * @author Mendix Widgets Framework Team
  */
 import { CSSProperties } from "react";
-import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue } from "mendix";
+import { ActionValue, DynamicValue, EditableValue, ListValue, ListAttributeValue, WebIcon } from "mendix";
 import { Big } from "big.js";
 
 export interface DataSourceType {
     templateJsonAttr: EditableValue<string>;
+    basePdfSource?: ListValue;
     dataJsonAttr?: EditableValue<string>;
     fieldKeySchemaJsonAttr?: EditableValue<string>;
-    basePdfSource?: ListValue;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
 }
 
+export type ViewModeEnum = "designer" | "viewer" | "readOnly";
+
 export type FieldKeySourceModeEnum = "manual" | "datasource" | "json";
 
-export type ViewModeEnum = "designer" | "viewer";
+export type SaveButtonRenderModeEnum = "button" | "link";
+
+export type SaveButtonStyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
+export type CustomActionButton1RenderModeEnum = "button" | "link";
+
+export type CustomActionButton1StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
+export type CustomActionButton2RenderModeEnum = "button" | "link";
+
+export type CustomActionButton2StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
+
+export type CustomActionButton3RenderModeEnum = "button" | "link";
+
+export type CustomActionButton3StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
 
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
+    basePdfSource: {} | { caption: string } | { type: string } | null;
     dataJsonAttr: string;
     fieldKeySchemaJsonAttr: string;
-    basePdfSource: {} | { caption: string } | { type: string } | null;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
 }
@@ -35,18 +51,64 @@ export interface PdfTemplateDesignerContainerProps {
     style?: CSSProperties;
     tabIndex?: number;
     dataSource: DataSourceType[];
+    viewMode: ViewModeEnum;
+    showPagesSection: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showFieldProperties: boolean;
+    showShortcutHints: boolean;
+    enableKeyboardShortcuts: boolean;
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
-    pdfJsWorkerUrl?: DynamicValue<string>;
-    pdfJsScriptUrl?: DynamicValue<string>;
-    sigWebScriptUrl?: DynamicValue<string>;
-    showShortcutHints: boolean;
-    enableKeyboardShortcuts: boolean;
-    showFieldProperties: boolean;
-    showPaletteSection: boolean;
-    showFieldsSection: boolean;
-    showPagesSection: boolean;
+    showPrintButton: boolean;
+    showHeaderCheckbox: boolean;
+    headerCheckboxAttribute?: EditableValue<boolean>;
+    headerCheckboxLabel: string;
+    headerCheckboxShowLabel: boolean;
+    headerCheckboxVisible?: DynamicValue<boolean>;
+    headerCheckboxEditable?: DynamicValue<boolean>;
+    headerCheckboxOnChangeAction?: ActionValue;
+    showSaveButton: boolean;
+    saveButtonText: string;
+    saveButtonTooltip: string;
+    saveButtonIcon?: DynamicValue<WebIcon>;
+    saveButtonRenderMode: SaveButtonRenderModeEnum;
+    saveButtonStyle: SaveButtonStyleEnum;
+    saveButtonTabIndex: number;
+    saveButtonVisible?: DynamicValue<boolean>;
+    saveButtonEnabled: boolean;
+    saveButtonAction?: ActionValue;
+    showCustomActionButton1: boolean;
+    customActionButton1Text: string;
+    customActionButton1Tooltip: string;
+    customActionButton1Icon?: DynamicValue<WebIcon>;
+    customActionButton1RenderMode: CustomActionButton1RenderModeEnum;
+    customActionButton1Style: CustomActionButton1StyleEnum;
+    customActionButton1TabIndex: number;
+    customActionButton1Visible?: DynamicValue<boolean>;
+    customActionButton1Enabled: boolean;
+    customActionButton1Action?: ActionValue;
+    showCustomActionButton2: boolean;
+    customActionButton2Text: string;
+    customActionButton2Tooltip: string;
+    customActionButton2Icon?: DynamicValue<WebIcon>;
+    customActionButton2RenderMode: CustomActionButton2RenderModeEnum;
+    customActionButton2Style: CustomActionButton2StyleEnum;
+    customActionButton2TabIndex: number;
+    customActionButton2Visible?: DynamicValue<boolean>;
+    customActionButton2Enabled: boolean;
+    customActionButton2Action?: ActionValue;
+    showCustomActionButton3: boolean;
+    customActionButton3Text: string;
+    customActionButton3Tooltip: string;
+    customActionButton3Icon?: DynamicValue<WebIcon>;
+    customActionButton3RenderMode: CustomActionButton3RenderModeEnum;
+    customActionButton3Style: CustomActionButton3StyleEnum;
+    customActionButton3TabIndex: number;
+    customActionButton3Visible?: DynamicValue<boolean>;
+    customActionButton3Enabled: boolean;
+    customActionButton3Action?: ActionValue;
     showPaletteToolText: boolean;
     showPaletteToolMultiVariableText: boolean;
     showPaletteToolSignature: boolean;
@@ -77,8 +139,9 @@ export interface PdfTemplateDesignerContainerProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
-    saveButtonText: string;
-    viewMode: ViewModeEnum;
+    pdfJsWorkerUrl?: DynamicValue<string>;
+    pdfJsScriptUrl?: DynamicValue<string>;
+    sigWebScriptUrl?: DynamicValue<string>;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -93,18 +156,64 @@ export interface PdfTemplateDesignerPreviewProps {
     renderMode: "design" | "xray" | "structure";
     translate: (text: string) => string;
     dataSource: DataSourcePreviewType[];
+    viewMode: ViewModeEnum;
+    showPagesSection: boolean;
+    showPaletteSection: boolean;
+    showFieldsSection: boolean;
+    showFieldProperties: boolean;
+    showShortcutHints: boolean;
+    enableKeyboardShortcuts: boolean;
     fieldKeySourceMode: FieldKeySourceModeEnum;
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
-    pdfJsWorkerUrl: string;
-    pdfJsScriptUrl: string;
-    sigWebScriptUrl: string;
-    showShortcutHints: boolean;
-    enableKeyboardShortcuts: boolean;
-    showFieldProperties: boolean;
-    showPaletteSection: boolean;
-    showFieldsSection: boolean;
-    showPagesSection: boolean;
+    showPrintButton: boolean;
+    showHeaderCheckbox: boolean;
+    headerCheckboxAttribute: string;
+    headerCheckboxLabel: string;
+    headerCheckboxShowLabel: boolean;
+    headerCheckboxVisible: string;
+    headerCheckboxEditable: string;
+    headerCheckboxOnChangeAction: {} | null;
+    showSaveButton: boolean;
+    saveButtonText: string;
+    saveButtonTooltip: string;
+    saveButtonIcon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    saveButtonRenderMode: SaveButtonRenderModeEnum;
+    saveButtonStyle: SaveButtonStyleEnum;
+    saveButtonTabIndex: number | null;
+    saveButtonVisible: string;
+    saveButtonEnabled: boolean;
+    saveButtonAction: {} | null;
+    showCustomActionButton1: boolean;
+    customActionButton1Text: string;
+    customActionButton1Tooltip: string;
+    customActionButton1Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton1RenderMode: CustomActionButton1RenderModeEnum;
+    customActionButton1Style: CustomActionButton1StyleEnum;
+    customActionButton1TabIndex: number | null;
+    customActionButton1Visible: string;
+    customActionButton1Enabled: boolean;
+    customActionButton1Action: {} | null;
+    showCustomActionButton2: boolean;
+    customActionButton2Text: string;
+    customActionButton2Tooltip: string;
+    customActionButton2Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton2RenderMode: CustomActionButton2RenderModeEnum;
+    customActionButton2Style: CustomActionButton2StyleEnum;
+    customActionButton2TabIndex: number | null;
+    customActionButton2Visible: string;
+    customActionButton2Enabled: boolean;
+    customActionButton2Action: {} | null;
+    showCustomActionButton3: boolean;
+    customActionButton3Text: string;
+    customActionButton3Tooltip: string;
+    customActionButton3Icon: { type: "glyph"; iconClass: string; } | { type: "image"; imageUrl: string; iconUrl: string; } | { type: "icon"; iconClass: string; } | undefined;
+    customActionButton3RenderMode: CustomActionButton3RenderModeEnum;
+    customActionButton3Style: CustomActionButton3StyleEnum;
+    customActionButton3TabIndex: number | null;
+    customActionButton3Visible: string;
+    customActionButton3Enabled: boolean;
+    customActionButton3Action: {} | null;
     showPaletteToolText: boolean;
     showPaletteToolMultiVariableText: boolean;
     showPaletteToolSignature: boolean;
@@ -135,6 +244,7 @@ export interface PdfTemplateDesignerPreviewProps {
     showPropertyRequired: boolean;
     showPropertyDuplicateAction: boolean;
     showPropertyDeleteAction: boolean;
-    saveButtonText: string;
-    viewMode: ViewModeEnum;
+    pdfJsWorkerUrl: string;
+    pdfJsScriptUrl: string;
+    sigWebScriptUrl: string;
 }

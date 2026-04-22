@@ -44,11 +44,12 @@
      - `Data JSON` bound to `ClientDocument.DataJson`
      - `Base PDF datasource` bound to the base template file
    - User edits/signs in overlay controls; widget auto-syncs to `ClientDocument.DataJson`.
+   - Viewer Save blocks until fields marked `required` in the template are filled.
    - Viewer values are hydrated from `DataJson` only (missing keys render as empty/unchecked); there is no fallback read from native PDF form field values.
    - Set `Status = InReview` while editing.
 3. `ACT_ClientDocument_FinalizeFromDataJson`
    - Input: `ClientDocument`.
-   - Validate `DataJson` and required fields.
+   - Viewer save already validates required fields selected in the template.
    - Call `GenerateFlattenedPdf(basePdf, templateJsonSnapshot, dataJson, clientDocumentOutputFile)`.
    - Ensure template output mode for final generation is `flattened`.
    - Set `Status = Finalized`, set `FinalizedDate/FinalizedBy`, commit.
@@ -158,6 +159,17 @@ Built-in key options are included in dropdown key-source modes (`datasource`/`js
 - For `date` fields, the editor includes a `Format` dropdown with common values (`MM/dd/yyyy`, `HH:mm`, `MM/dd/yyyy HH:mm`, `MM/dd/yyyy hh:mm a`).
 - If a `date` field uses computed keys (`__currentDate`, `__currentTime`, `__currentDateTime`), Viewer mode renders the resolved value as static text to avoid browser date-input parsing/clipping artifacts.
 
+**View mode behavior (shown vs hidden)**
+- `Designer`
+- Shown: full template editing surfaces (palette, fields, pages, field properties), overlay field placement/editing, Save action, optional custom action buttons.
+- Hidden: end-user form-entry controls.
+- `Viewer`
+- Shown: interactive overlay controls rendered over the PDF, signature capture actions, Save action, optional custom action buttons.
+- Hidden: designer editing panels and template manipulation tools.
+- `Read-only PDF`
+- Shown: PDF viewing canvas with page navigation/zoom and optional custom action buttons.
+- Hidden: overlay controls, signature entry actions, Save action, Data JSON warnings, and all designer editing panels.
+
 **Data JSON (values)**
 The Java action expects a **data JSON** object where keys match template field `key` values.
 ```json
@@ -203,7 +215,7 @@ The Java action expects a **data JSON** object where keys match template field `
   - Buttons: New, Duplicate version, Deactivate/Activate
 - Client Document Viewer page
   - Data view on `ClientDocument`
-  - Use widget `View mode = Viewer`
+  - Use widget `View mode = Viewer` for interactive entry/signature capture, or `View mode = Read-only PDF` for plain document viewing without overlay controls.
   - Bind:
     - `Template JSON` -> `ClientDocument.TemplateJsonSnapshot` (or active `FormConfiguration.TemplateJson`)
     - `Data JSON` -> `ClientDocument.DataJson`

@@ -32,10 +32,11 @@ This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix mod
 - Palette field visibility toggles (booleans, default `true`, category `Palette fields`): hide/show individual palette tools (Text, Multi-variable text, Signature, Table, Line, Rectangle, Circle, Image, Link, Signature pad, QR code, Date, Time, Select, Checkbox, Radio, Barcode, Wide barcode).
 - Field property visibility toggles (booleans, default `true`): hide/show each row in the Field properties card:
   - `Key`, `Label`, `Show label toggle`, `Type`, `Page`, `Position`, `Size`, `Font size`, `Alignment`, `Required`, `Duplicate button`, `Delete button`.
-- `Save button text` (string, optional): custom toolbar text for the save action button (defaults to `Save JSON`).
-- `View mode` (enumeration): `Designer` (full template editor) or `Viewer` (read/fill mode with interactive overlay fields, including mouse/touch signature capture).
+- `Header checkbox` settings: optional toolbar checkbox bound to a Boolean attribute on the widget context object, with label/show-label, visibility, editability, and change-action options.
+- `Save button` settings: the save action now has the same toolbar presentation options as custom buttons, including show/hide, caption, tooltip, icon, render mode, style, tab index, visibility expression, enabled state, and an optional post-save action.
+- `View mode` (enumeration): `Designer` (full template editor), `Viewer` (read/fill mode with interactive overlay fields), or `Read-only PDF` (PDF viewer only, no overlay fields).
 - `On change`: optional microflow/nanoflow executed whenever template JSON changes from editor interactions.
-- `On save`: optional microflow to commit the updated TemplateJson.
+- `On save`: optional legacy post-save action under `Template definition`. If `Save button action` is configured, it takes precedence.
 
 **Field key schema JSON (JSON Schema) example**
 ```json
@@ -194,6 +195,17 @@ Use this in your bound `Field key schema JSON` attribute when `Field key source 
 - When generating `flattened` output from a PDF that already has native form fields, the Java action first flattens existing field appearances to avoid ghost/placeholder overlays.
 - Flatten/render paths now clear field content areas before drawing/finalizing values, which prevents stale light placeholder text when regenerating from previously edited PDFs.
 - See `mendix-module/PdfTemplateDesigner/README.md` section `Runtime workflow (end user, overlay mode)` for the recommended microflow sequence.
+
+**Mode behavior (shown vs hidden)**
+- `Designer`
+- Shown: full designer UI (palette, fields list, pages panel, field properties), editable overlay boxes, placement/resize handles, alignment/snap guides, designer keyboard shortcuts, Save button, optional custom action buttons.
+- Hidden: viewer input controls (end-user text/date/select/radio/checkbox/signature entry widgets).
+- `Viewer`
+- Shown: PDF canvas + interactive overlay controls bound to template fields, signature capture UI, Save button, optional custom action buttons.
+- Hidden: designer-only editing UI (palette, field properties, drag/resize template editing).
+- `Read-only PDF`
+- Shown: PDF canvas viewer with page navigation/zoom and optional custom action buttons.
+- Hidden: all overlay fields/controls, signature capture UI, Data JSON validation/binding warnings, Save button, and designer editing UI.
 
 **PDF.js worker**
 - The widget loads PDF.js from `window.pdfjsLib` when present.

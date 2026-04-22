@@ -5,316 +5,534 @@
     <name>PDF Template Designer</name>
     <description>Design PDF templates by placing overlay fields on top of a base PDF.</description>
     <properties>
-        <property key="dataSource" type="object" isList="true" required="false">
-            <caption>Template definition</caption>
-            <category>Data</category>
-            <description>Context object for FormConfiguration (or equivalent). Required in Designer mode; optional in Viewer mode.</description>
-            <properties>
-                <property key="templateJsonAttr" type="attribute" required="true">
-                    <caption>Template JSON</caption>
-                    <category>Template</category>
-                    <description>LongString attribute that stores the template JSON.</description>
-                    <attributeTypes>
-                        <attributeType name="String" />
-                    </attributeTypes>
-                </property>
-                <property key="dataJsonAttr" type="attribute" required="false">
-                    <caption>Data JSON</caption>
-                    <category>Template</category>
-                    <description>LongString attribute that stores Viewer mode field values as a JSON object. Recommended for Viewer mode so edits/signatures persist.</description>
-                    <attributeTypes>
-                        <attributeType name="String" />
-                    </attributeTypes>
-                </property>
-                <property key="fieldKeySchemaJsonAttr" type="attribute" required="false">
-                    <caption>Field key schema JSON</caption>
-                    <category>Field keys</category>
-                    <description>Optional String/LongString attribute containing a JSON Schema object for key options when Field key source = Dropdown from JSON.</description>
-                    <attributeTypes>
-                        <attributeType name="String" />
-                    </attributeTypes>
-                </property>
-                <property key="basePdfSource" type="datasource" isList="true" required="false">
-                    <caption>Base PDF datasource</caption>
-                    <category>Template</category>
-                    <description>Datasource that returns the base PDF FileDocument object. The widget uses the first item.</description>
-                </property>
-                <property key="onChangeAction" type="action" required="false">
-                    <caption>On change</caption>
-                    <category>Actions</category>
-                    <description>Action executed whenever the template JSON changes from editor interactions.</description>
-                </property>
-                <property key="onSaveAction" type="action" required="false">
-                    <caption>On save</caption>
-                    <category>Actions</category>
-                    <description>Action executed after saving TemplateJson/DataJson (usually a commit microflow).</description>
-                </property>
-            </properties>
-        </property>
+        <propertyGroup caption="Data Source Bindings">
+            <property key="dataSource" type="object" isList="true" required="false">
+                <caption>Template definition</caption>
+                <description>Context object for FormConfiguration (or equivalent). Required in Designer mode and optional in other modes.</description>
+                <properties>
+                    <property key="templateJsonAttr" type="attribute" required="true">
+                        <caption>Template JSON</caption>
+                        <category>Template</category>
+                        <description>LongString attribute that stores the template JSON.</description>
+                        <attributeTypes>
+                            <attributeType name="String" />
+                        </attributeTypes>
+                    </property>
+                    <property key="basePdfSource" type="datasource" isList="true" required="false">
+                        <caption>Base PDF datasource</caption>
+                        <category>Template</category>
+                        <description>Datasource that returns the base PDF FileDocument object. The widget uses the first item.</description>
+                    </property>
+                    <property key="dataJsonAttr" type="attribute" required="false">
+                        <caption>Data JSON</caption>
+                        <category>Template</category>
+                        <description>LongString attribute that stores runtime field values as a JSON object.</description>
+                        <attributeTypes>
+                            <attributeType name="String" />
+                        </attributeTypes>
+                    </property>
+                    <property key="fieldKeySchemaJsonAttr" type="attribute" required="false">
+                        <caption>Field key schema JSON</caption>
+                        <category>Field keys</category>
+                        <description>Optional String/LongString attribute containing a JSON Schema object for key options when Field key source is set to JSON.</description>
+                        <attributeTypes>
+                            <attributeType name="String" />
+                        </attributeTypes>
+                    </property>
+                    <property key="onChangeAction" type="action" required="false">
+                        <caption>On change</caption>
+                        <category>Actions</category>
+                        <description>Action executed whenever the template JSON changes from editor interactions.</description>
+                    </property>
+                    <property key="onSaveAction" type="action" required="false">
+                        <caption>On save</caption>
+                        <category>Actions</category>
+                        <description>Action executed after saving TemplateJson/DataJson (usually a commit microflow).</description>
+                    </property>
+                </properties>
+            </property>
+        </propertyGroup>
 
-        <property key="fieldKeySourceMode" type="enumeration" defaultValue="manual" required="true">
-            <caption>Field key source</caption>
-            <category>Field keys</category>
-            <description>Choose how field keys are sourced. In dropdown modes, the Palette lists keys for one-step placement and Field properties uses a key dropdown. Built-in key options are also included: __currentDate, __currentTime, __currentDateTime, __signature.</description>
-            <enumerationValues>
-                <enumerationValue key="manual">Manual text input</enumerationValue>
-                <enumerationValue key="datasource">Dropdown from datasource</enumerationValue>
-                <enumerationValue key="json">Dropdown from JSON</enumerationValue>
-            </enumerationValues>
-        </property>
+        <propertyGroup caption="Display Mode And Layout">
+            <property key="viewMode" type="enumeration" defaultValue="designer" required="true">
+                <caption>View mode</caption>
+                <description>Choose Designer (template editing), Viewer (interactive overlay fields), or Read-only PDF (PDF viewer only with no overlay fields).</description>
+                <enumerationValues>
+                    <enumerationValue key="designer">Designer</enumerationValue>
+                    <enumerationValue key="viewer">Viewer</enumerationValue>
+                    <enumerationValue key="readOnly">Read-only PDF</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="showPagesSection" type="boolean" defaultValue="true" required="true">
+                <caption>Show pages section</caption>
+                <description>Show or hide the pages thumbnail section.</description>
+            </property>
+            <property key="showPaletteSection" type="boolean" defaultValue="true" required="true">
+                <caption>Show palette section</caption>
+                <description>Show or hide the palette section in the sidebar.</description>
+            </property>
+            <property key="showFieldsSection" type="boolean" defaultValue="true" required="true">
+                <caption>Show fields section</caption>
+                <description>Show or hide the fields list section in the sidebar.</description>
+            </property>
+            <property key="showFieldProperties" type="boolean" defaultValue="true" required="true">
+                <caption>Show field properties</caption>
+                <description>Show or hide the field properties panel.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="fieldKeyOptionsSource" type="datasource" isList="true" required="false">
-            <caption>Field key options datasource</caption>
-            <category>Field keys</category>
-            <description>Datasource that returns records containing allowed field key values for the key palette and property dropdown. Built-in key options are automatically added (__currentDate, __currentTime, __currentDateTime, __signature).</description>
-        </property>
+        <propertyGroup caption="Editor Behavior">
+            <property key="showShortcutHints" type="boolean" defaultValue="true" required="true">
+                <caption>Show shortcut hints</caption>
+                <description>Show or hide keyboard shortcut hints in the toolbar.</description>
+            </property>
+            <property key="enableKeyboardShortcuts" type="boolean" defaultValue="true" required="true">
+                <caption>Enable keyboard shortcuts</caption>
+                <description>Enable keyboard shortcuts such as undo/redo, duplicate, delete, and nudging.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="fieldKeyOptionAttribute" type="attribute" dataSource="fieldKeyOptionsSource" required="false">
-            <caption>Field key option attribute</caption>
-            <category>Field keys</category>
-            <description>Attribute that contains the key value to use in the dropdown.</description>
-            <attributeTypes>
-                <attributeType name="String" />
-                <attributeType name="Enum" />
-                <attributeType name="Integer" />
-                <attributeType name="Long" />
-                <attributeType name="AutoNumber" />
-            </attributeTypes>
-        </property>
+        <propertyGroup caption="Field Key Options">
+            <property key="fieldKeySourceMode" type="enumeration" defaultValue="manual" required="true">
+                <caption>Field key source</caption>
+                <description>Choose how field keys are sourced. In dropdown modes, the palette lists keys for one-step placement and field properties use a key dropdown.</description>
+                <enumerationValues>
+                    <enumerationValue key="manual">Manual text input</enumerationValue>
+                    <enumerationValue key="datasource">Dropdown from datasource</enumerationValue>
+                    <enumerationValue key="json">Dropdown from JSON</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="fieldKeyOptionsSource" type="datasource" isList="true" required="false">
+                <caption>Field key options datasource</caption>
+                <description>Datasource that returns records containing allowed field key values for the key palette and key dropdown.</description>
+            </property>
+            <property key="fieldKeyOptionAttribute" type="attribute" dataSource="fieldKeyOptionsSource" required="false">
+                <caption>Field key option attribute</caption>
+                <description>Attribute that contains the key value to use in the dropdown.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                    <attributeType name="Enum" />
+                    <attributeType name="Integer" />
+                    <attributeType name="Long" />
+                    <attributeType name="AutoNumber" />
+                </attributeTypes>
+            </property>
+        </propertyGroup>
 
-        <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
-            <caption>PDF.js worker URL</caption>
-            <category>Advanced</category>
-            <description>Text template for the PDF.js worker script URL. Leave empty to use the default worker URL.</description>
-        </property>
+        <propertyGroup caption="Toolbar Actions">
+            <property key="showPrintButton" type="boolean" defaultValue="false" required="true">
+                <caption>Show print button</caption>
+                <description>Show a Print button in the toolbar that prints all PDF pages.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="pdfJsScriptUrl" type="textTemplate" required="false">
-            <caption>PDF.js script URL</caption>
-            <category>Advanced</category>
-            <description>Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.</description>
-        </property>
+        <propertyGroup caption="Header Checkbox">
+            <property key="showHeaderCheckbox" type="boolean" defaultValue="false" required="true">
+                <caption>Show header checkbox</caption>
+                <description>Show or hide a checkbox in the header toolbar.</description>
+            </property>
+            <property key="headerCheckboxAttribute" type="attribute" required="false">
+                <caption>Checkbox attribute</caption>
+                <description>Boolean attribute from the widget context object that stores the header checkbox value.</description>
+                <attributeTypes>
+                    <attributeType name="Boolean" />
+                </attributeTypes>
+            </property>
+            <property key="headerCheckboxLabel" type="string" required="false">
+                <caption>Checkbox label</caption>
+                <description>Optional label shown next to the header checkbox. Leave empty to use 'Checkbox'.</description>
+            </property>
+            <property key="headerCheckboxShowLabel" type="boolean" defaultValue="true" required="true">
+                <caption>Show checkbox label</caption>
+                <description>Show or hide the label next to the header checkbox.</description>
+            </property>
+            <property key="headerCheckboxVisible" type="expression" required="false">
+                <caption>Header checkbox visible</caption>
+                <description>Visibility expression for the header checkbox.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="headerCheckboxEditable" type="expression" required="false">
+                <caption>Header checkbox editable</caption>
+                <description>Editable expression for the header checkbox. The checkbox also respects the attribute's read-only state.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="headerCheckboxOnChangeAction" type="action" required="false">
+                <caption>Header checkbox on change</caption>
+                <description>Action executed after the header checkbox value changes.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="sigWebScriptUrl" type="textTemplate" required="false">
-            <caption>SigWeb script URL</caption>
-            <category>Advanced</category>
-            <description>Optional URL to SigWebTablet.js for external signature pad integration in Viewer mode.</description>
-        </property>
+        <propertyGroup caption="Save Button">
+            <property key="showSaveButton" type="boolean" defaultValue="true" required="true">
+                <caption>Show save button</caption>
+                <description>Show or hide the Save button in the toolbar. The button remains hidden in Read-only PDF mode.</description>
+            </property>
+            <property key="saveButtonText" type="string" required="false">
+                <caption>Save button text</caption>
+                <description>Custom text for the Save button in the toolbar. Leave empty to use 'Save JSON'.</description>
+            </property>
+            <property key="saveButtonTooltip" type="string" required="false">
+                <caption>Save button tooltip</caption>
+                <description>Optional tooltip text for the Save button.</description>
+            </property>
+            <property key="saveButtonIcon" type="icon" required="false">
+                <caption>Save button icon</caption>
+                <description>Optional icon for the Save button.</description>
+            </property>
+            <property key="saveButtonRenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Save button render mode</caption>
+                <description>Render the Save button as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="saveButtonStyle" type="enumeration" defaultValue="primary" required="true">
+                <caption>Save button style</caption>
+                <description>Visual style for the Save button.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="saveButtonTabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Save button tab index</caption>
+                <description>Optional tab index for the Save button.</description>
+            </property>
+            <property key="saveButtonVisible" type="expression" required="false">
+                <caption>Save button visible</caption>
+                <description>Visibility expression for the Save button.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="saveButtonEnabled" type="boolean" defaultValue="true" required="true">
+                <caption>Save button enabled</caption>
+                <description>Enable or disable the Save button.</description>
+            </property>
+            <property key="saveButtonAction" type="action" required="false">
+                <caption>Save button action</caption>
+                <description>Optional action executed after the built-in save completes. When set, this overrides the legacy On save action under Data Source Bindings.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showShortcutHints" type="boolean" defaultValue="true" required="true">
-            <caption>Show shortcut hints</caption>
-            <category>Behavior</category>
-            <description>Show or hide the shortcuts help text in the editor toolbar.</description>
-        </property>
+        <propertyGroup caption="Custom Button 1">
+            <property key="showCustomActionButton1" type="boolean" defaultValue="false" required="true">
+                <caption>Show custom button 1</caption>
+                <description>Show or hide additional action button 1 in the toolbar.</description>
+            </property>
+            <property key="customActionButton1Text" type="string" required="false">
+                <caption>Custom button 1 caption</caption>
+                <description>Caption for custom action button 1. Leave empty to use 'Action 1'.</description>
+            </property>
+            <property key="customActionButton1Tooltip" type="string" required="false">
+                <caption>Custom button 1 tooltip</caption>
+                <description>Optional tooltip text for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1Icon" type="icon" required="false">
+                <caption>Custom button 1 icon</caption>
+                <description>Optional icon for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 1 render mode</caption>
+                <description>Render custom action button 1 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton1Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 1 style</caption>
+                <description>Visual style for custom action button 1.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton1TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 1 tab index</caption>
+                <description>Optional tab index for custom action button 1.</description>
+            </property>
+            <property key="customActionButton1Visible" type="expression" required="false">
+                <caption>Custom button 1 visible</caption>
+                <description>Visibility expression for custom action button 1.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="customActionButton1Enabled" type="boolean" defaultValue="true" required="true">
+                <caption>Custom button 1 enabled</caption>
+                <description>Enable or disable custom action button 1.</description>
+            </property>
+            <property key="customActionButton1Action" type="action" required="false">
+                <caption>Custom button 1 action</caption>
+                <description>Action executed when custom action button 1 is clicked.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="enableKeyboardShortcuts" type="boolean" defaultValue="true" required="true">
-            <caption>Enable keyboard shortcuts</caption>
-            <category>Behavior</category>
-            <description>Enable keyboard shortcuts such as undo/redo, duplicate, delete, and arrow-key nudging.</description>
-        </property>
+        <propertyGroup caption="Custom Button 2">
+            <property key="showCustomActionButton2" type="boolean" defaultValue="false" required="true">
+                <caption>Show custom button 2</caption>
+                <description>Show or hide additional action button 2 in the toolbar.</description>
+            </property>
+            <property key="customActionButton2Text" type="string" required="false">
+                <caption>Custom button 2 caption</caption>
+                <description>Caption for custom action button 2. Leave empty to use 'Action 2'.</description>
+            </property>
+            <property key="customActionButton2Tooltip" type="string" required="false">
+                <caption>Custom button 2 tooltip</caption>
+                <description>Optional tooltip text for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2Icon" type="icon" required="false">
+                <caption>Custom button 2 icon</caption>
+                <description>Optional icon for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 2 render mode</caption>
+                <description>Render custom action button 2 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton2Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 2 style</caption>
+                <description>Visual style for custom action button 2.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton2TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 2 tab index</caption>
+                <description>Optional tab index for custom action button 2.</description>
+            </property>
+            <property key="customActionButton2Visible" type="expression" required="false">
+                <caption>Custom button 2 visible</caption>
+                <description>Visibility expression for custom action button 2.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="customActionButton2Enabled" type="boolean" defaultValue="true" required="true">
+                <caption>Custom button 2 enabled</caption>
+                <description>Enable or disable custom action button 2.</description>
+            </property>
+            <property key="customActionButton2Action" type="action" required="false">
+                <caption>Custom button 2 action</caption>
+                <description>Action executed when custom action button 2 is clicked.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showFieldProperties" type="boolean" defaultValue="true" required="true">
-            <caption>Show field properties</caption>
-            <category>Behavior</category>
-            <description>Show or hide the right-side Field properties card.</description>
-        </property>
+        <propertyGroup caption="Custom Button 3">
+            <property key="showCustomActionButton3" type="boolean" defaultValue="false" required="true">
+                <caption>Show custom button 3</caption>
+                <description>Show or hide additional action button 3 in the toolbar.</description>
+            </property>
+            <property key="customActionButton3Text" type="string" required="false">
+                <caption>Custom button 3 caption</caption>
+                <description>Caption for custom action button 3. Leave empty to use 'Action 3'.</description>
+            </property>
+            <property key="customActionButton3Tooltip" type="string" required="false">
+                <caption>Custom button 3 tooltip</caption>
+                <description>Optional tooltip text for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3Icon" type="icon" required="false">
+                <caption>Custom button 3 icon</caption>
+                <description>Optional icon for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3RenderMode" type="enumeration" defaultValue="button" required="true">
+                <caption>Custom button 3 render mode</caption>
+                <description>Render custom action button 3 as a button or link.</description>
+                <enumerationValues>
+                    <enumerationValue key="button">Button</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton3Style" type="enumeration" defaultValue="default" required="true">
+                <caption>Custom button 3 style</caption>
+                <description>Visual style for custom action button 3.</description>
+                <enumerationValues>
+                    <enumerationValue key="default">Default</enumerationValue>
+                    <enumerationValue key="primary">Primary</enumerationValue>
+                    <enumerationValue key="success">Success</enumerationValue>
+                    <enumerationValue key="info">Info</enumerationValue>
+                    <enumerationValue key="warning">Warning</enumerationValue>
+                    <enumerationValue key="danger">Danger</enumerationValue>
+                    <enumerationValue key="link">Link</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="customActionButton3TabIndex" type="integer" defaultValue="0" required="true">
+                <caption>Custom button 3 tab index</caption>
+                <description>Optional tab index for custom action button 3.</description>
+            </property>
+            <property key="customActionButton3Visible" type="expression" required="false">
+                <caption>Custom button 3 visible</caption>
+                <description>Visibility expression for custom action button 3.</description>
+                <returnType type="Boolean" />
+            </property>
+            <property key="customActionButton3Enabled" type="boolean" defaultValue="true" required="true">
+                <caption>Custom button 3 enabled</caption>
+                <description>Enable or disable custom action button 3.</description>
+            </property>
+            <property key="customActionButton3Action" type="action" required="false">
+                <caption>Custom button 3 action</caption>
+                <description>Action executed when custom action button 3 is clicked.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showPaletteSection" type="boolean" defaultValue="true" required="true">
-            <caption>Show palette section</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Palette section in the left sidebar.</description>
-        </property>
+        <propertyGroup caption="Palette Tools">
+            <property key="showPaletteToolText" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Text field</caption>
+                <description>Show or hide the Text field tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolMultiVariableText" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Multi-variable text</caption>
+                <description>Show or hide the Multi-variable text tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolSignature" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Signature field</caption>
+                <description>Show or hide the Signature field tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolTable" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Table</caption>
+                <description>Show or hide the Table tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolLine" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Line</caption>
+                <description>Show or hide the Line tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolBox" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Rectangle</caption>
+                <description>Show or hide the Rectangle tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolCircle" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Circle</caption>
+                <description>Show or hide the Circle tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolImage" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Image</caption>
+                <description>Show or hide the Image tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolLink" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Link</caption>
+                <description>Show or hide the Link tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolSignaturePad" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Signature pad</caption>
+                <description>Show or hide the Signature pad tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolQr" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: QR code</caption>
+                <description>Show or hide the QR code tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolDate" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Date field</caption>
+                <description>Show or hide the Date field tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolTime" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Time field</caption>
+                <description>Show or hide the Time field tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolSelect" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Select</caption>
+                <description>Show or hide the Select tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolCheckbox" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Checkbox</caption>
+                <description>Show or hide the Checkbox tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolRadio" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Radio</caption>
+                <description>Show or hide the Radio tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolBarcode" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Barcode</caption>
+                <description>Show or hide the Barcode tool in the palette.</description>
+            </property>
+            <property key="showPaletteToolBarcodeWide" type="boolean" defaultValue="true" required="true">
+                <caption>Show tool: Wide barcode</caption>
+                <description>Show or hide the Wide barcode tool in the palette.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showFieldsSection" type="boolean" defaultValue="true" required="true">
-            <caption>Show fields section</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Fields list section in the left sidebar.</description>
-        </property>
+        <propertyGroup caption="Field Inspector">
+            <property key="showPropertyKey" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Key</caption>
+                <description>Show or hide the Key editor in Field properties.</description>
+            </property>
+            <property key="showPropertyLabel" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Label</caption>
+                <description>Show or hide the Label editor in Field properties.</description>
+            </property>
+            <property key="showPropertyShowLabel" type="boolean" defaultValue="false" required="true">
+                <caption>Show property: Show label toggle</caption>
+                <description>Show or hide the flattened output label visibility toggle.</description>
+            </property>
+            <property key="showPropertyType" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Type</caption>
+                <description>Show or hide the field Type selector in Field properties.</description>
+            </property>
+            <property key="showPropertyPage" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Page</caption>
+                <description>Show or hide the Page editor in Field properties.</description>
+            </property>
+            <property key="showPropertyPosition" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Position</caption>
+                <description>Show or hide the Position (x, y) editors in Field properties.</description>
+            </property>
+            <property key="showPropertySize" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Size</caption>
+                <description>Show or hide the Size (w, h) editors in Field properties.</description>
+            </property>
+            <property key="showPropertyFontSize" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Font size</caption>
+                <description>Show or hide the Font size editor in Field properties.</description>
+            </property>
+            <property key="showPropertyAlignment" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Alignment</caption>
+                <description>Show or hide the Alignment selector in Field properties.</description>
+            </property>
+            <property key="showPropertyRequired" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Required</caption>
+                <description>Show or hide the Required toggle in Field properties.</description>
+            </property>
+            <property key="showPropertyDuplicateAction" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Duplicate button</caption>
+                <description>Show or hide the Duplicate field button in Field properties.</description>
+            </property>
+            <property key="showPropertyDeleteAction" type="boolean" defaultValue="true" required="true">
+                <caption>Show property: Delete button</caption>
+                <description>Show or hide the Delete field button in Field properties.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showPagesSection" type="boolean" defaultValue="true" required="true">
-            <caption>Show pages section</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Pages thumbnail section in the left sidebar.</description>
-        </property>
+        <propertyGroup caption="Integrations">
+            <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
+                <caption>PDF.js worker URL</caption>
+                <description>Text template for the PDF.js worker script URL. Leave empty to use the default worker URL.</description>
+            </property>
+            <property key="pdfJsScriptUrl" type="textTemplate" required="false">
+                <caption>PDF.js script URL</caption>
+                <description>Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.</description>
+            </property>
+            <property key="sigWebScriptUrl" type="textTemplate" required="false">
+                <caption>SigWeb script URL</caption>
+                <description>Optional URL to SigWebTablet.js for external signature pad integration in Viewer mode.</description>
+            </property>
+        </propertyGroup>
 
-        <property key="showPaletteToolText" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Text field</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Text field tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolMultiVariableText" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Multi-variable text</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Multi-variable text tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolSignature" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Signature field</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Signature field tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolTable" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Table</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Table tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolLine" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Line</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Line tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolBox" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Rectangle</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Rectangle tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolCircle" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Circle</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Circle tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolImage" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Image</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Image tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolLink" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Link</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Link tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolSignaturePad" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Signature pad</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Signature pad tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolQr" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: QR code</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the QR code tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolDate" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Date field</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Date field tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolTime" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Time field</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Time field tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolSelect" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Select</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Select tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolCheckbox" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Checkbox</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Checkbox tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolRadio" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Radio</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Radio tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolBarcode" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Barcode</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Barcode tool in the palette.</description>
-        </property>
-        <property key="showPaletteToolBarcodeWide" type="boolean" defaultValue="true" required="true">
-            <caption>Show tool: Wide barcode</caption>
-            <category>Palette fields</category>
-            <description>Show or hide the Wide barcode tool in the palette.</description>
-        </property>
-
-        <property key="showPropertyKey" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Key</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Key editor in Field properties.</description>
-        </property>
-
-        <property key="showPropertyLabel" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Label</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Label editor in Field properties.</description>
-        </property>
-
-        <property key="showPropertyShowLabel" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Show label toggle</caption>
-            <category>Configuration</category>
-            <description>Show or hide the flattened output label visibility toggle.</description>
-        </property>
-
-        <property key="showPropertyType" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Type</caption>
-            <category>Configuration</category>
-            <description>Show or hide the field Type selector in Field properties.</description>
-        </property>
-
-        <property key="showPropertyPage" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Page</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Page editor in Field properties.</description>
-        </property>
-
-        <property key="showPropertyPosition" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Position</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Position (x, y) editors in Field properties.</description>
-        </property>
-
-        <property key="showPropertySize" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Size</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Size (w, h) editors in Field properties.</description>
-        </property>
-
-        <property key="showPropertyFontSize" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Font size</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Font size editor in Field properties.</description>
-        </property>
-
-        <property key="showPropertyAlignment" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Alignment</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Alignment selector in Field properties.</description>
-        </property>
-
-        <property key="showPropertyRequired" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Required</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Required toggle in Field properties.</description>
-        </property>
-
-        <property key="showPropertyDuplicateAction" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Duplicate button</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Duplicate field button in Field properties.</description>
-        </property>
-
-        <property key="showPropertyDeleteAction" type="boolean" defaultValue="true" required="true">
-            <caption>Show property: Delete button</caption>
-            <category>Configuration</category>
-            <description>Show or hide the Delete field button in Field properties.</description>
-        </property>
-
-        <property key="saveButtonText" type="string" required="false">
-            <caption>Save button text</caption>
-            <category>Configuration</category>
-            <description>Custom text for the Save button in the toolbar. Leave empty to use 'Save JSON'.</description>
-        </property>
-
-        <property key="viewMode" type="enumeration" defaultValue="designer" required="true">
-            <caption>View mode</caption>
-            <category>Data</category>
-            <description>Choose between full template designer mode and viewer mode (overlay controls hydrated from Data JSON).</description>
-            <enumerationValues>
-                <enumerationValue key="designer">Designer</enumerationValue>
-                <enumerationValue key="viewer">Viewer</enumerationValue>
-            </enumerationValues>
-        </property>
-
-        <systemProperty key="Editability" />
+        <propertyGroup caption="General">
+            <systemProperty key="Editability" />
+        </propertyGroup>
     </properties>
 </widget>
