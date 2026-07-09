@@ -3454,7 +3454,10 @@ export default function PdfDesignerCore(
         if (!mxGlobal?.data?.getDocumentUrl) {
           throw new Error("mx.data.getDocumentUrl is not available.");
         }
-        const url = mxGlobal.data.getDocumentUrl(basePdfId);
+        // Mendix 11.12 changed mx.data.getDocumentUrl to return a Promise<string>
+        // (previously a synchronous string). Await handles both shapes; without it
+        // the Promise stringifies to "[object Promise]" and fetch 400s.
+        const url = await mxGlobal.data.getDocumentUrl(basePdfId);
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`Failed to load PDF. HTTP ${response.status}.`);
