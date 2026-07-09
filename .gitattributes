@@ -1,30 +1,16 @@
-# Normalize line endings: store text as LF in the repo, let Git auto-detect text vs binary.
-* text=auto
+# Normalize all text files to LF, in the repo and in the working tree (all platforms).
+# Git auto-detects text vs binary; eol=lf stops Windows checkouts reintroducing CRLF.
+* text=auto eol=lf
 
-# Force LF for source/config so Windows checkouts don't reintroduce CRLF churn.
-*.ts   text eol=lf
-*.tsx  text eol=lf
-*.js   text eol=lf
-*.jsx  text eol=lf
-*.mjs  text eol=lf
-*.json text eol=lf
-*.xml  text eol=lf
-*.css  text eol=lf
-*.scss text eol=lf
-*.md   text eol=lf
-*.yml  text eol=lf
-*.yaml text eol=lf
-
-# Treat known binary assets as binary (never normalize).
-*.png  binary
-*.jpg  binary
-*.jpeg binary
-*.gif  binary
-*.ico  binary
-*.svg  binary
-*.mpk  binary
-*.pdf  binary
+# Treat known binary assets as binary (never normalize / never touch line endings).
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.mpk   binary
+*.pdf   binary
 *.woff  binary
 *.woff2 binary
-*.ttf  binary
-*.eot  binary
+*.ttf   binary
+*.eot   binary
