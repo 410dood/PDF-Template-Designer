@@ -62,6 +62,8 @@ export interface PdfTemplateDesignerContainerProps {
     fieldKeyOptionsSource?: ListValue;
     fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
     showPrintButton: boolean;
+    showImportTemplateButton: boolean;
+    showReplacePdfButton: boolean;
     showHeaderCheckbox: boolean;
     headerCheckboxAttribute?: EditableValue<boolean>;
     headerCheckboxLabel: string;
@@ -167,6 +169,8 @@ export interface PdfTemplateDesignerPreviewProps {
     fieldKeyOptionsSource: {} | { caption: string } | { type: string } | null;
     fieldKeyOptionAttribute: string;
     showPrintButton: boolean;
+    showImportTemplateButton: boolean;
+    showReplacePdfButton: boolean;
     showHeaderCheckbox: boolean;
     headerCheckboxAttribute: string;
     headerCheckboxLabel: string;

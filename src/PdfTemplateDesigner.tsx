@@ -88,6 +88,8 @@ export interface PdfDesignerCoreProps {
   saveButtonEnabled?: boolean;
   saveButtonAction?: ActionValue;
   showPrintButton?: boolean;
+  showImportTemplateButton?: boolean;
+  showReplacePdfButton?: boolean;
   showCustomActionButton1?: boolean;
   customActionButton1Text?: string;
   customActionButton1Tooltip?: string;
@@ -2795,6 +2797,8 @@ export default function PdfDesignerCore(
   const saveButtonText = (props.saveButtonText || "").trim() || "Save JSON";
   const saveButtonTooltip = (props.saveButtonTooltip || "").trim();
   const showPrintButton = props.showPrintButton === true;
+  const showImportTemplateButton = props.showImportTemplateButton !== false;
+  const showReplacePdfButton = props.showReplacePdfButton !== false;
   const viewMode = normalizeViewMode((props as any).viewMode);
   const isViewerMode = viewMode === "viewer";
   const isReadOnlyMode = viewMode === "readOnly";
@@ -2973,6 +2977,9 @@ export default function PdfDesignerCore(
   const [renderScale, setRenderScale] = useState(1);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
+  const [pdfRefreshCounter, setPdfRefreshCounter] = useState(0);
+  const importTemplateInputRef = useRef<HTMLInputElement | null>(null);
+  const replacePdfInputRef = useRef<HTMLInputElement | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [dataJsonError, setDataJsonError] = useState<string | null>(null);
@@ -3534,7 +3541,8 @@ export default function PdfDesignerCore(
     isPdfJsConfigLoading,
     resolvedScriptUrl,
     resolvedWorkerUrl,
-    revokeImageObjectUrl
+    revokeImageObjectUrl,
+    pdfRefreshCounter
   ]);
 
   useEffect(() => {
@@ -4882,6 +4890,122 @@ export default function PdfDesignerCore(
     URL.revokeObjectURL(url);
   }, [basePdfId]);
 
+  const handleImportTemplateClick = useCallback(() => {
+    if (isViewerMode || isReadOnlyMode) {
+      return;
+    }
+    importTemplateInputRef.current?.click();
+  }, [isViewerMode, isReadOnlyMode]);
+
+  const handleImportTemplateFileChange = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      input.value = ""; // allow re-selecting the same file
+      if (!file || isViewerMode || isReadOnlyMode) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === "string" ? reader.result : "";
+        const parsed = parseTemplateJson(text);
+        if (parsed.error) {
+          setJsonError(`Import failed: ${parsed.error}`);
+          return;
+        }
+        setJsonError(null);
+        setFields(parsed.fields);
+        undoStackRef.current = [];
+        redoStackRef.current = [];
+        setGuides([]);
+        setSelectedFieldId(parsed.fields[0]?.id || null);
+        lastLoadedJsonRef.current = text;
+      };
+      reader.onerror = () => {
+        setJsonError("Unable to read the selected template file.");
+      };
+      reader.readAsText(file);
+    },
+    [isViewerMode, isReadOnlyMode]
+  );
+
+  const handleReplacePdfClick = useCallback(() => {
+    if (isViewerMode || isReadOnlyMode || !basePdfId) {
+      return;
+    }
+    replacePdfInputRef.current?.click();
+  }, [isViewerMode, isReadOnlyMode, basePdfId]);
+
+  const handleReplacePdfFileChange = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      input.value = ""; // allow re-selecting the same file
+      if (!file || !basePdfId || isViewerMode || isReadOnlyMode) {
+        return;
+      }
+      const isPdf =
+        file.type.toLowerCase() === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        setRenderError("Please choose a PDF file.");
+        return;
+      }
+      if (
+        typeof window !== "undefined" &&
+        typeof window.confirm === "function" &&
+        !window.confirm(
+          "Replace the base PDF with this file? This overwrites the stored PDF and keeps your current field layout."
+        )
+      ) {
+        return;
+      }
+      const mxGlobal = (window as any).mx;
+      if (!mxGlobal?.data?.saveDocument) {
+        setRenderError("mx.data.saveDocument is not available.");
+        return;
+      }
+      setLoadingPdf(true);
+      setRenderError(null);
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        setLoadingPdf(false);
+        if (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to replace PDF.";
+          setRenderError(message);
+          return;
+        }
+        // Force the PDF-load effect to re-fetch and re-render the new document.
+        setPdfRefreshCounter((value) => value + 1);
+      };
+      try {
+        // Mendix 11.12 made several mx.data APIs Promise-based; support both the
+        // Promise form and the legacy (guid, name, params, blob, ok, err) callbacks.
+        const maybePromise = mxGlobal.data.saveDocument(
+          basePdfId,
+          file.name || "document.pdf",
+          {},
+          file,
+          () => finish(),
+          (err: unknown) => finish(err || new Error("Failed to replace PDF."))
+        );
+        if (maybePromise && typeof maybePromise.then === "function") {
+          maybePromise
+            .then(() => finish())
+            .catch((err: unknown) => finish(err));
+        }
+      } catch (error) {
+        finish(error);
+      }
+    },
+    [basePdfId, isViewerMode, isReadOnlyMode]
+  );
+
   const handlePrintClick = useCallback(async () => {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return;
@@ -6180,6 +6304,20 @@ export default function PdfDesignerCore(
               <span className="pdf-template-designer__action-label">
                 Template
               </span>
+              <input
+                ref={importTemplateInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: "none" }}
+                onChange={handleImportTemplateFileChange}
+              />
+              <input
+                ref={replacePdfInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                style={{ display: "none" }}
+                onChange={handleReplacePdfFileChange}
+              />
               <button
                 className="pdf-template-designer__button"
                 type="button"
@@ -6201,6 +6339,27 @@ export default function PdfDesignerCore(
               >
                 Export
               </button>
+              {showImportTemplateButton && !isViewerMode && !isReadOnlyMode ? (
+                <button
+                  className="pdf-template-designer__button"
+                  onClick={handleImportTemplateClick}
+                  type="button"
+                  title="Load a template JSON file from disk onto the canvas"
+                >
+                  Import
+                </button>
+              ) : null}
+              {showReplacePdfButton && !isViewerMode && !isReadOnlyMode ? (
+                <button
+                  className="pdf-template-designer__button"
+                  onClick={handleReplacePdfClick}
+                  type="button"
+                  title="Upload a new PDF to replace the base document (keeps fields)"
+                  disabled={!basePdfId}
+                >
+                  Replace PDF
+                </button>
+              ) : null}
               {showPrintButton ? (
                 <button
                   className="pdf-template-designer__button"

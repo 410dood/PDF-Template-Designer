@@ -124,6 +124,14 @@
                 <caption>Show print button</caption>
                 <description>Show a Print button in the toolbar that prints all PDF pages.</description>
             </property>
+            <property key="showImportTemplateButton" type="boolean" defaultValue="true" required="true">
+                <caption>Show import template button</caption>
+                <description>Show an Import button that loads a template JSON file from disk onto the canvas (the user still clicks Save to persist). Hidden in Viewer/Read-only mode.</description>
+            </property>
+            <property key="showReplacePdfButton" type="boolean" defaultValue="true" required="true">
+                <caption>Show replace PDF button</caption>
+                <description>Show a Replace PDF button that uploads a new PDF file into the base PDF's file document, keeping the existing field layout. Hidden in Viewer/Read-only mode.</description>
+            </property>
         </propertyGroup>
 
         <propertyGroup caption="Header Checkbox">
