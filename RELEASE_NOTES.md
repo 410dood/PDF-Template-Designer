@@ -1,5 +1,18 @@
 # Release Notes
 
+## 0.2.0 - 2026-07-13
+
+### Highlights
+- **Mendix 11.12 compatibility:** fixed base-PDF loading by awaiting `mx.data.getDocumentUrl`, resolving documents that failed to render on newer runtimes.
+- **Import Template** toolbar button: load an existing template JSON directly into the Designer.
+- **Replace PDF** toolbar button: swap the underlying base PDF without rebuilding the template.
+- Added a configurable **header checkbox** field/control.
+
+### Maintenance
+- Normalized all text files to LF line endings and added `.gitattributes` (`eol=lf`) to keep diffs clean across platforms.
+- Merged the `Release-2026-02-23` line into `main`.
+- Build artifacts (`dist/`) are now tracked in the repository, and the `dist/0.2.0` MPK is attached to this release.
+
 ## 0.1.13 - 2026-04-01
 
 ### Fixes

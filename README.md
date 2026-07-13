@@ -1,6 +1,34 @@
-# PDF Template Designer (Mendix widget + module guidance)
+<div align="center">
+
+<img src="assets/logo.svg" alt="PDF Template Designer" width="460" />
+
+# PDF Template Designer
+
+**Mendix pluggable widget for designing PDF templates with drag-and-drop overlay fields — fill them in Viewer mode and flatten to a finished PDF, all inside Mendix.**
+
+![version](https://img.shields.io/badge/version-0.2.0-6366F1)
+![Mendix](https://img.shields.io/badge/Mendix-11-0EA5E9)
+![license](https://img.shields.io/badge/license-MIT-22C55E)
+
+<img src="assets/cover.png" alt="PDF Template Designer preview" width="820" />
+
+</div>
+
+---
 
 This folder contains the `pdftemplatedesigner` pluggable widget and a Mendix module blueprint for storing template definitions and generating flattened output PDFs.
+
+## Screenshots
+
+<!--
+Add live captures from Studio Pro here and drop the PNGs into `assets/`, e.g.:
+
+| Designer | Viewer / fill | Flattened output |
+| --- | --- | --- |
+| ![Designer](assets/screenshot-designer.png) | ![Viewer](assets/screenshot-viewer.png) | ![Output](assets/screenshot-output.png) |
+-->
+
+_Live screenshots coming soon. The [cover preview](assets/cover.png) above shows the Designer layout; drop real Studio Pro captures into `assets/` and reference them here._
 
 **What's included**
 - `pdftemplatedesigner/` widget source (React/TypeScript)
