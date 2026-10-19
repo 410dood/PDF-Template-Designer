@@ -14,6 +14,7 @@ export interface DataSourceType {
     fieldKeySchemaJsonAttr?: EditableValue<string>;
     onChangeAction?: ActionValue;
     onSaveAction?: ActionValue;
+    tokenContextJsonAttr?: EditableValue<string>;
 }
 
 export type ViewModeEnum = "designer" | "viewer" | "readOnly";
@@ -43,6 +44,7 @@ export interface DataSourcePreviewType {
     fieldKeySchemaJsonAttr: string;
     onChangeAction: {} | null;
     onSaveAction: {} | null;
+    tokenContextJsonAttr: string;
 }
 
 export interface PdfTemplateDesignerContainerProps {

@@ -49,6 +49,14 @@
                         <category>Actions</category>
                         <description>Action executed after saving TemplateJson/DataJson (usually a commit microflow).</description>
                     </property>
+                    <property key="tokenContextJsonAttr" type="attribute" required="false">
+                        <caption>Token context JSON</caption>
+                        <category>Template</category>
+                        <description>Optional String/LongString attribute with a flat {"token.key":"value"} JSON object (e.g. ClientDocument.PdfTokenContextJson). Tokens resolve in multi-variable text fields and prefill matching field keys in Viewer mode; user-entered values always win.</description>
+                        <attributeTypes>
+                            <attributeType name="String" />
+                        </attributeTypes>
+                    </property>
                 </properties>
             </property>
         </propertyGroup>

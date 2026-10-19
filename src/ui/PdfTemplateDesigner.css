@@ -1075,6 +1075,15 @@
   border-radius: 8px;
 }
 
+.pdf-template-designer__notice {
+  font-size: 12px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
 .pdf-template-designer__preview-card {
   background: #fff;
   border-radius: 12px;

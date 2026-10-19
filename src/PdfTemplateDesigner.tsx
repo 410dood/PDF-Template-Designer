@@ -28,6 +28,7 @@ interface PdfDesignerCoreDataSourceItem {
   templateJsonAttr?: EditableValue<string>;
   dataJsonAttr?: EditableValue<string>;
   fieldKeySchemaJsonAttr?: EditableValue<string>;
+  tokenContextJsonAttr?: EditableValue<string>;
   basePdfSource?: ListValue;
   onChangeAction?: ActionValue;
   onSaveAction?: ActionValue;
@@ -317,12 +318,16 @@ const PDFJS_AMD_MODULE_IDS = [
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
 const PALETTE_TYPE_DRAG_TYPE = "application/x-pdf-field-type";
+/** Shown (as a soft notice, not an error) when no Topaz pad is detected. The form stays fully usable. */
+const SIGWEB_NO_PAD_MESSAGE =
+  "No signature pad detected. You can still fill out this form. To capture a signature, plug in the Topaz pad, make sure SigWeb is running, and allow the browser's connection prompt if one appears.";
 const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = [
   "GetSigImageB64",
   "GetSigImageBase64",
   "GetSigImage"
 ];
 let pdfjsLoader: Promise<PdfjsApi> | null = null;
+const pdfjsModuleLoaders = new Map<string, Promise<PdfjsApi>>();
 let fieldIdCounter = 0;
 
 const FIELD_DEFAULTS: Record<
@@ -377,6 +382,7 @@ const TOOL_RAIL_ITEMS: Array<{
   type: FieldType;
   keyBase?: string;
   seedLabel?: string;
+  seedVariablesSampleData?: string;
   format?: string;
   w?: number;
   h?: number;
@@ -401,6 +407,32 @@ const TOOL_RAIL_ITEMS: Array<{
     seedLabel: "Multi-variable text",
     w: 220,
     h: 28
+  },
+  {
+    id: "fixedText",
+    type: "multiVariableText",
+    glyph: "FX",
+    tooltip: "Fixed text (output-only: section headers, instructions)",
+    label: "Fixed text",
+    keyBase: "fixedText",
+    seedLabel: "",
+    seedVariablesSampleData: "Fixed text - edit this in Content",
+    showLabel: false,
+    w: 260,
+    h: 22
+  },
+  {
+    id: "tokenText",
+    type: "multiVariableText",
+    glyph: "TK",
+    tooltip: "Token (output-only: resolved from client/document data, not editable when filling)",
+    label: "Token",
+    keyBase: "tokenText",
+    seedLabel: "",
+    seedVariablesSampleData: "{client.full_name}",
+    showLabel: false,
+    w: 220,
+    h: 22
   },
   {
     id: "signature",
@@ -1630,11 +1662,71 @@ function snapPositionToReferences(
   return { position: position + bestDelta, guide };
 }
 
+/**
+ * Dynamic import that survives the widget bundler: a literal `import(url)` with a
+ * variable would be rewritten for the AMD/CJS output, so build it at runtime.
+ */
+function importEsModule(url: string): Promise<any> {
+  // eslint-disable-next-line no-new-func
+  return new Function("u", "return import(u)")(url);
+}
+
+/**
+ * Load pdf.js as a PRIVATE module instance keyed by script URL.
+ *
+ * Never reuse `window.pdfjsLib`: other widgets on the same page (olari.PdfViewer
+ * bundles pdf.js 4.10.x, the Mendix DocumentViewer ships its own 4.8.x) assign that
+ * global as a side effect, and their API never matches the worker configured for this
+ * widget ("The API version X does not match the Worker version Y"). A module import of
+ * our own script URL gives us an instance whose GlobalWorkerOptions belong to us alone.
+ */
+function loadPdfjsModule(scriptSrc: string): Promise<PdfjsApi> {
+  const cached = pdfjsModuleLoaders.get(scriptSrc);
+  if (cached) {
+    return cached;
+  }
+  const previousGlobal = (window as any).pdfjsLib;
+  const loader = importEsModule(scriptSrc)
+    .then((mod: any) => {
+      const lib = (mod && typeof mod.getDocument === "function" ? mod : mod?.default) as
+        | PdfjsApi
+        | undefined;
+      if (!lib || typeof lib.getDocument !== "function") {
+        throw new Error(`PDF.js module at ${scriptSrc} did not export getDocument.`);
+      }
+      // pdf.mjs builds also assign globalThis.pdfjsLib on import; put back whatever
+      // another widget had there so we do not break its expectations either.
+      if (previousGlobal && (window as any).pdfjsLib !== previousGlobal) {
+        (window as any).pdfjsLib = previousGlobal;
+      }
+      return lib;
+    })
+    .catch((error: unknown) => {
+      pdfjsModuleLoaders.delete(scriptSrc);
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to load PDF.js from ${scriptSrc}.`);
+    });
+  pdfjsModuleLoaders.set(scriptSrc, loader);
+  return loader;
+}
+
 function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("PDF.js is not available."));
   }
 
+  const resolvedScriptSrc =
+    scriptSrc ||
+    resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
+    PDFJS_CDN;
+
+  if (isMjsScriptUrl(resolvedScriptSrc)) {
+    return loadPdfjsModule(resolvedScriptSrc);
+  }
+
+  // Legacy (non-module) script path: pdf.min.js can only expose itself through the
+  // global / AMD loader, so reusing an existing global is the best we can do there.
   const existing = (window as any).pdfjsLib as PdfjsApi | undefined;
   if (existing) {
     return Promise.resolve(existing);
@@ -1645,10 +1737,6 @@ function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
   }
 
   pdfjsLoader = new Promise((resolve, reject) => {
-    const resolvedScriptSrc =
-      scriptSrc ||
-      resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
-      PDFJS_CDN;
     const rejectWithReset = (message: string) => {
       pdfjsLoader = null;
       reject(new Error(message));
@@ -2067,13 +2155,13 @@ function activateSigWebTablet(globalObject: any): string | undefined {
     try {
       setTabletState(1);
     } catch (_error) {
-      return "SigWeb is installed, but the tablet service could not be started. Verify the Topaz service is running and allow the browser permission prompt if shown.";
+      return "The signature pad software (SigWeb) is installed but could not start. Please restart the SigWeb service, or contact support if the problem continues.";
     }
   }
 
   const tabletState = getSigWebNumericValue(globalObject, "GetTabletState");
   if (tabletState !== undefined && tabletState !== 1) {
-    return "SigWeb did not report an active tablet connection. Verify the Topaz pad is connected, the SigWeb service is running, and the browser's Local Network Access prompt was allowed.";
+    return SIGWEB_NO_PAD_MESSAGE;
   }
 
   return undefined;
@@ -2157,15 +2245,14 @@ function startSigWebLiveCapture(
     const tabletState = getSigWebNumericValue(globalObject, "GetTabletState");
     if (tabletState !== undefined && tabletState !== 1) {
       return {
-        error:
-          "SigWeb did not report an active tablet connection. Verify the Topaz pad is connected and the browser permission prompt was allowed."
+        error: SIGWEB_NO_PAD_MESSAGE
       };
     }
     return { timer };
   } catch (_error) {
     return {
       error:
-        "SigWeb live capture could not start. Verify the Topaz service is running and the browser is allowed to access it."
+        "The signature pad could not start capturing. Please check that the Topaz pad is plugged in and SigWeb is running, then try again."
     };
   }
 }
@@ -3024,6 +3111,24 @@ export default function PdfDesignerCore(
   const fieldKeyOptionsSource = props.fieldKeyOptionsSource;
   const fieldKeyOptionAttribute = props.fieldKeyOptionAttribute;
   const fieldKeySchemaJsonValue = dataSourceItem?.fieldKeySchemaJsonAttr;
+  const tokenContextJsonValue = dataSourceItem?.tokenContextJsonAttr;
+  const tokenContextValues = useMemo<Record<string, unknown>>(() => {
+    const raw =
+      tokenContextJsonValue && tokenContextJsonValue.status === "available"
+        ? tokenContextJsonValue.value || ""
+        : "";
+    if (!raw.trim()) {
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch (_error) {
+      return {};
+    }
+  }, [tokenContextJsonValue, tokenContextJsonValue?.status, tokenContextJsonValue?.value]);
 
   const revokeImageObjectUrl = useCallback(() => {
     if (imageObjectUrlRef.current) {
@@ -3162,7 +3267,7 @@ export default function PdfDesignerCore(
         if (!captureFunction) {
           setSigWebState("error");
           setSigWebError(
-            "SigWeb loaded, but no supported capture function was found. Expected GetSigImageB64, GetSigImageBase64, or GetSigImage."
+            "The installed signature pad software (SigWeb) is not a supported version. Please contact support to update it."
           );
           return;
         }
@@ -3176,7 +3281,7 @@ export default function PdfDesignerCore(
         setSigWebError(
           error instanceof Error
             ? error.message
-            : "Failed to load SigWeb script."
+            : "The signature pad software (SigWeb) could not be loaded. Signatures cannot be captured on this device right now; the form can still be filled out."
         );
       });
 
@@ -3849,15 +3954,29 @@ export default function PdfDesignerCore(
     [dataSourceItem, basePdfId, configuredSaveAction, runConfiguredAction]
   );
 
-  const viewerTemplateValues = useMemo(
-    () =>
-      buildDataPayload(
-        fields,
-        viewerFieldValues,
-        lastParsedDataJsonRef.current
-      ),
-    [fields, viewerFieldValues]
-  );
+  const viewerTemplateValues = useMemo(() => {
+    const payload = buildDataPayload(
+      fields,
+      viewerFieldValues,
+      lastParsedDataJsonRef.current
+    );
+    if (Object.keys(tokenContextValues).length === 0) {
+      return payload;
+    }
+    // Tokens are fallback values: user/data values win unless blank.
+    const merged: Record<string, unknown> = { ...tokenContextValues };
+    Object.entries(payload).forEach(([key, value]) => {
+      const isBlank =
+        value === null ||
+        value === undefined ||
+        (typeof value === "string" && !value.trim());
+      if (isBlank && key in merged) {
+        return;
+      }
+      merged[key] = value;
+    });
+    return merged;
+  }, [fields, viewerFieldValues, tokenContextValues]);
   const missingViewerRequiredFields = useMemo(
     () =>
       fields.filter((field) =>
@@ -4531,7 +4650,9 @@ export default function PdfDesignerCore(
         key,
         label: tool.seedLabel || "",
         variablesSampleData:
-          tool.type === "multiVariableText" ? "{name}" : undefined,
+          tool.type === "multiVariableText"
+            ? tool.seedVariablesSampleData ?? "{name}"
+            : undefined,
         format: tool.format,
         w: tool.w,
         h: tool.h,
@@ -5701,7 +5822,12 @@ export default function PdfDesignerCore(
               field.type === "date" ? field.format : undefined
             ) || ""
           : "";
-      const displayValue = value.trim() ? value : computedFallback;
+      const tokenFallbackRaw = tokenContextValues[field.key];
+      const tokenFallback =
+        !value.trim() && !computedFallback && tokenFallbackRaw !== null && tokenFallbackRaw !== undefined
+          ? String(tokenFallbackRaw)
+          : "";
+      const displayValue = value.trim() ? value : computedFallback || tokenFallback;
       if (field.type === "select") {
         const options =
           field.options.length > 0
@@ -6000,7 +6126,16 @@ export default function PdfDesignerCore(
             </div>
           ) : null}
           {sigWebError ? (
-            <div className="pdf-template-designer__alert">{sigWebError}</div>
+            <div
+              className={
+                sigWebError === SIGWEB_NO_PAD_MESSAGE
+                  ? "pdf-template-designer__notice"
+                  : "pdf-template-designer__alert"
+              }
+              role="status"
+            >
+              {sigWebError}
+            </div>
           ) : null}
           {isViewerMode && showViewerDataJsonBindingWarning ? (
             <div className="pdf-template-designer__alert">
