@@ -146,6 +146,7 @@ export interface PdfDesignerCoreProps {
   customActionButton3Action?: ActionValue;
   viewMode?: "designer" | "viewer" | "readOnly";
   pageLayout?: "continuous" | "single";
+  requiredHighlight?: DynamicValue<boolean>;
   showPaletteToolText?: boolean;
   showPaletteToolMultiVariableText?: boolean;
   showPaletteToolSignature?: boolean;
@@ -2378,8 +2379,18 @@ function initialViewerFieldValue(
   return "";
 }
 
-function getTemplateFieldDisplayName(field: TemplateField): string {
-  return field.label.trim() || field.key.trim() || "Unnamed field";
+/** Staff-facing name for a required field: its label, else its kind (template keys are internal). */
+function describeRequiredField(field: TemplateField): string {
+  const kinds: Partial<Record<FieldType, string>> = {
+    signature: "Signature",
+    checkbox: "Checkbox",
+    date: "Date",
+    select: "Choice",
+    radio: "Choice",
+    image: "Image"
+  };
+  const name = field.label.trim() || kinds[field.type] || "Text field";
+  return `${name}, page ${field.page + 1}`;
 }
 
 function isViewerRequiredFieldMissing(
@@ -3841,12 +3852,21 @@ export default function PdfDesignerCore(
     [missingViewerRequiredFields]
   );
   const hasMissingViewerRequiredFields = missingViewerRequiredFields.length > 0;
+  // The page can switch the red highlight on (e.g. after a refused Lock), as Save always did.
+  const requiredHighlightFromPage =
+    (props as any).requiredHighlight?.status === "available" &&
+    (props as any).requiredHighlight?.value === true;
+  const showRequiredHighlight = viewerSaveAttempted || requiredHighlightFromPage;
   const viewerValidationMessage =
-    isViewerMode && viewerSaveAttempted && hasMissingViewerRequiredFields
-      ? `Fill the required fields before saving: ${missingViewerRequiredFields
-          .map(getTemplateFieldDisplayName)
-          .join(", ")}.`
+    isViewerMode && showRequiredHighlight && hasMissingViewerRequiredFields
+      ? `Required fields still empty: ${missingViewerRequiredFields
+          .map(describeRequiredField)
+          .join("; ")}.`
       : null;
+  const requiredFieldTotal = useMemo(
+    () => fields.filter((field) => field.required).length,
+    [fields]
+  );
 
   const pushUndoSnapshot = useCallback((snapshot?: TemplateField[]) => {
     const source = snapshot || fieldsRef.current;
@@ -5907,6 +5927,31 @@ export default function PdfDesignerCore(
     );
   }
 
+  const jumpToNextRequired = () => {
+    const next = [...missingViewerRequiredFields].sort(
+      (a, b) => a.page - b.page || a.y - b.y || a.x - b.x
+    )[0];
+    setViewerSaveAttempted(true);
+    if (!next) {
+      return;
+    }
+    const reveal = () => {
+      const host = scrollHost || viewerRef.current;
+      const box = host?.querySelector<HTMLElement>(`[data-field-id="${next.id}"]`);
+      if (!box) {
+        return;
+      }
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      box.querySelector<HTMLElement>("input, textarea, select, canvas")?.focus?.();
+    };
+    if (!isContinuousLayout && next.page !== pageIndex) {
+      setPageIndex(next.page);
+      window.setTimeout(reveal, 300);
+    } else {
+      reveal();
+    }
+  };
+
   const renderViewerOverlayContent = (
     pageFields: TemplateField[],
     pageNo: number
@@ -5915,10 +5960,11 @@ export default function PdfDesignerCore(
                     {pageFields.map((field) => (
                       <div
                         key={field.id}
+                        data-field-id={field.id}
                         className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
                           field.type
                         }${
-                          viewerSaveAttempted &&
+                          showRequiredHighlight &&
                           missingViewerRequiredFieldIds.has(field.id)
                             ? " is-required-missing"
                             : ""
@@ -6126,6 +6172,25 @@ export default function PdfDesignerCore(
                 <option value={1.25}>125%</option>
                 <option value={1.5}>150%</option>
               </select>
+              {isViewerMode && requiredFieldTotal > 0 ? (
+                <button
+                  className={`pdf-template-designer__button pdf-template-designer__required-chip${
+                    hasMissingViewerRequiredFields ? " is-missing" : " is-complete"
+                  }`}
+                  type="button"
+                  onClick={jumpToNextRequired}
+                  disabled={!hasMissingViewerRequiredFields}
+                  title={
+                    hasMissingViewerRequiredFields
+                      ? "Go to the next required field"
+                      : "All required fields are filled"
+                  }
+                >
+                  {hasMissingViewerRequiredFields
+                    ? `${missingViewerRequiredFields.length} required left`
+                    : "Required fields done"}
+                </button>
+              ) : null}
               {headerCheckboxControl}
               {showPrintButton ? (
                 <button

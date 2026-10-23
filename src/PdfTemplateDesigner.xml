@@ -558,6 +558,14 @@
             </property>
         </propertyGroup>
 
+        <propertyGroup caption="Required Fields">
+            <property key="requiredHighlight" type="expression" required="false">
+                <caption>Highlight missing required fields</caption>
+                <description>Viewer mode: when true, empty required fields are outlined in red and listed above the form (for example after the page refused to lock the document). The "N required left" chip is always shown when the template has required fields.</description>
+                <returnType type="Boolean" />
+            </property>
+        </propertyGroup>
+
         <propertyGroup caption="General">
             <systemProperty key="Editability" />
         </propertyGroup>

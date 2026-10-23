@@ -1169,3 +1169,25 @@
     transform: translateX(-50%);
   }
 }
+
+.pdf-template-designer__required-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-weight: 600;
+}
+
+.pdf-template-designer__required-chip.is-missing {
+  background: #fff4e5;
+  border-color: #f0b46a;
+  color: #8a4b08;
+}
+
+.pdf-template-designer__required-chip.is-complete,
+.pdf-template-designer__required-chip.is-complete:disabled {
+  background: #e8f5ee;
+  border-color: #9fd3b6;
+  color: #1f6b45;
+  opacity: 1;
+}
