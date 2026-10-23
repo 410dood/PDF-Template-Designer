@@ -1,6 +1,7 @@
 ﻿import { loadSharedPdfjs } from "./sharedPdfjs";
 import {
   createElement,
+  Fragment,
   ReactElement,
   useCallback,
   useEffect,
@@ -144,6 +145,7 @@ export interface PdfDesignerCoreProps {
   customActionButton3Enabled?: boolean;
   customActionButton3Action?: ActionValue;
   viewMode?: "designer" | "viewer" | "readOnly";
+  pageLayout?: "continuous" | "single";
   showPaletteToolText?: boolean;
   showPaletteToolMultiVariableText?: boolean;
   showPaletteToolSignature?: boolean;
@@ -2420,6 +2422,82 @@ function isViewerRequiredFieldMissing(
   return !displayValue && !computedFallback.trim();
 }
 
+interface ContinuousPageCanvasProps {
+  pdfDoc: PdfjsDocumentProxy;
+  pageNumber: number;
+  scale: number;
+  scrollRoot: HTMLElement | null;
+}
+
+/** One page of the continuous viewer. Renders its canvas once it is near the visible area. */
+function ContinuousPageCanvas({
+  pdfDoc,
+  pageNumber,
+  scale,
+  scrollRoot
+}: ContinuousPageCanvasProps): ReactElement {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isNear, setIsNear] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || isNear) {
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      setIsNear(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsNear(true);
+        }
+      },
+      { root: scrollRoot, rootMargin: "800px 0px" }
+    );
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [scrollRoot, isNear]);
+
+  useEffect(() => {
+    if (!isNear) {
+      return;
+    }
+    let cancelled = false;
+    let task: PdfjsRenderTask | null = null;
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext("2d");
+        if (cancelled || !canvas || !context) {
+          return;
+        }
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        task = page.render({ canvasContext: context, viewport });
+        await task.promise;
+      } catch (_error) {
+        // Cancelled or superseded renders are expected while zooming or resizing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        task?.cancel?.();
+      } catch (_error) {
+        // Ignore render cancellation failures.
+      }
+    };
+  }, [pdfDoc, pageNumber, scale, isNear]);
+
+  return <canvas className="pdf-template-designer__canvas-surface" ref={canvasRef} />;
+}
+
 function InlineSignatureCanvas(
   props: InlineSignatureCanvasProps
 ): ReactElement {
@@ -2675,6 +2753,8 @@ export default function PdfDesignerCore(
   const viewMode = normalizeViewMode((props as any).viewMode);
   const isViewerMode = viewMode === "viewer";
   const isReadOnlyMode = viewMode === "readOnly";
+  const isContinuousLayout =
+    (isViewerMode || isReadOnlyMode) && (props as any).pageLayout !== "single";
   const customActionButtons = useMemo(
     (): ToolbarButtonConfig[] =>
       [
@@ -2849,6 +2929,9 @@ export default function PdfDesignerCore(
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [renderScale, setRenderScale] = useState(1);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
+  const [visiblePage, setVisiblePage] = useState(1);
+  const [scrollHost, setScrollHost] = useState<HTMLDivElement | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [pdfRefreshCounter, setPdfRefreshCounter] = useState(0);
   const importTemplateInputRef = useRef<HTMLInputElement | null>(null);
@@ -3270,8 +3353,31 @@ export default function PdfDesignerCore(
   }, [isViewerMode, isDataJsonBound, dataJsonText, fields]);
 
   useEffect(() => {
-    setPageJumpInput(String(pageIndex + 1));
-  }, [pageIndex]);
+    setPageJumpInput(String(isContinuousLayout ? visiblePage : pageIndex + 1));
+  }, [pageIndex, visiblePage, isContinuousLayout]);
+
+  useEffect(() => {
+    if (!pdfDoc || !isContinuousLayout) {
+      setPageSizes([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const sizes: PageSize[] = [];
+      for (let n = 1; n <= pdfDoc.numPages; n++) {
+        const page = await pdfDoc.getPage(n);
+        const viewport = page.getViewport({ scale: 1 });
+        sizes.push({ width: viewport.width, height: viewport.height });
+      }
+      if (!cancelled) {
+        setPageSizes(sizes);
+        setVisiblePage(1);
+      }
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc, isContinuousLayout]);
 
   useEffect(() => {
     if (!viewerRef.current) {
@@ -5390,8 +5496,43 @@ export default function PdfDesignerCore(
     const maxPages = pdfDoc?.numPages || (imageBackgroundUrl ? 1 : 1);
     const requested = Math.floor(toNumber(pageJumpInput, pageIndex + 1));
     const normalized = clamp(requested, 1, maxPages);
+    if (isContinuousLayout && pdfDoc) {
+      const target = scrollHost?.querySelector<HTMLElement>(
+        `[data-pdf-page="${normalized}"]`
+      );
+      if (target && scrollHost) {
+        scrollHost.scrollTo({
+          top: target.offsetTop - (scrollHost.firstElementChild as HTMLElement)?.offsetHeight - 8,
+          behavior: "smooth"
+        });
+      }
+      setPageJumpInput(String(normalized));
+      return;
+    }
     setPageIndex(normalized - 1);
-  }, [pageJumpInput, pageIndex, pdfDoc, imageBackgroundUrl]);
+  }, [
+    pageJumpInput,
+    pageIndex,
+    pdfDoc,
+    imageBackgroundUrl,
+    isContinuousLayout,
+    scrollHost
+  ]);
+
+  const handleContinuousScroll = useCallback(() => {
+    if (!scrollHost) {
+      return;
+    }
+    const probe = scrollHost.getBoundingClientRect().top + scrollHost.clientHeight / 3;
+    const pages = scrollHost.querySelectorAll<HTMLElement>("[data-pdf-page]");
+    let current = 1;
+    pages.forEach((el) => {
+      if (el.getBoundingClientRect().top <= probe) {
+        current = Number(el.dataset.pdfPage) || current;
+      }
+    });
+    setVisiblePage((prev) => (prev === current ? prev : current));
+  }, [scrollHost]);
 
   const pageCount = pdfDoc?.numPages || (imageBackgroundUrl ? 1 : 1);
   const fieldsOnPage = fields.filter((field) => field.page === pageIndex);
@@ -5403,13 +5544,13 @@ export default function PdfDesignerCore(
   const renderHeight = pageSize.height * renderScale;
   const activeViewerSignatureField = useMemo(
     () =>
-      fieldsOnPage.find(
+      (isContinuousLayout ? fields : fieldsOnPage).find(
         (field) =>
           field.type === "signature" &&
           activeViewerSignatureFieldId !== null &&
           field.id === activeViewerSignatureFieldId
       ),
-    [fieldsOnPage, activeViewerSignatureFieldId]
+    [isContinuousLayout, fields, fieldsOnPage, activeViewerSignatureFieldId]
   );
 
   useEffect(() => {
@@ -5766,6 +5907,147 @@ export default function PdfDesignerCore(
     );
   }
 
+  const renderViewerOverlayContent = (
+    pageFields: TemplateField[],
+    pageNo: number
+  ): ReactElement => (
+    <Fragment>
+                    {pageFields.map((field) => (
+                      <div
+                        key={field.id}
+                        className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
+                          field.type
+                        }${
+                          viewerSaveAttempted &&
+                          missingViewerRequiredFieldIds.has(field.id)
+                            ? " is-required-missing"
+                            : ""
+                        }${
+                          activeViewerSignatureFieldId === field.id
+                            ? " is-active"
+                            : ""
+                        }`}
+                        style={{
+                          left: field.x * renderScale,
+                          top: field.y * renderScale,
+                          width: field.w * renderScale,
+                          height: field.h * renderScale,
+                          backgroundColor: field.transparentBackground
+                            ? "transparent"
+                            : normalizeBackgroundColor(
+                                field.backgroundColor,
+                                DEFAULT_FIELD_BACKGROUND_COLOR
+                              ),
+                          color: normalizeHexColor(
+                            field.textColor,
+                            DEFAULT_FIELD_TEXT_COLOR
+                          )
+                        }}
+                        onPointerDown={() => {
+                          if (field.type === "signature") {
+                            setActiveViewerSignatureFieldId(field.id);
+                            setViewerSignatureMessage(null);
+                          } else if (activeViewerSignatureFieldId) {
+                            setActiveViewerSignatureFieldId(null);
+                            activeSigWebCanvasRef.current = null;
+                            activeSigWebFieldKeyRef.current = null;
+                            stopSigWebForActiveField();
+                          }
+                        }}
+                      >
+                        {renderViewerFieldControl(field)}
+                      </div>
+                    ))}
+                    {activeViewerSignatureField &&
+                    activeViewerSignatureField.page === pageNo ? (
+                      <div
+                        className={`pdf-template-designer__signature-actions${
+                          showTypedSignatureEditor
+                            ? " pdf-template-designer__signature-actions--stacked"
+                            : ""
+                        }`}
+                        style={{
+                          left: activeViewerSignatureField.x * renderScale,
+                          top:
+                            (activeViewerSignatureField.y +
+                              activeViewerSignatureField.h) *
+                              renderScale +
+                            6
+                        }}
+                        >
+                        <div className="pdf-template-designer__signature-actions-row">
+                          <button
+                            className="pdf-template-designer__button pdf-template-designer__button--compact"
+                            type="button"
+                            onClick={() =>
+                              clearViewerSignature(activeViewerSignatureField.key)
+                            }
+                          >
+                            Clear signature
+                          </button>
+                          <button
+                            className="pdf-template-designer__button pdf-template-designer__button--compact"
+                            type="button"
+                            onClick={openTypedSignatureEditor}
+                          >
+                            Type name
+                          </button>
+                          {sigWebState === "ready" ? (
+                            <button
+                              className="pdf-template-designer__button pdf-template-designer__button--compact"
+                              type="button"
+                              onClick={() =>
+                                importSignatureFromSigWeb(
+                                  activeViewerSignatureField.key
+                                )
+                              }
+                            >
+                              Use SigWeb
+                            </button>
+                          ) : null}
+                        </div>
+                        {showTypedSignatureEditor ? (
+                          <div className="pdf-template-designer__typed-signature-editor">
+                            <input
+                              className="pdf-template-designer__input"
+                              type="text"
+                              placeholder="Type your full name"
+                              value={typedSignatureDraft}
+                              onChange={(event) =>
+                                setTypedSignatureDraft(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  applyTypedSignature();
+                                }
+                                if (event.key === "Escape") {
+                                  cancelTypedSignatureEditor();
+                                }
+                              }}
+                            />
+                            <div className="pdf-template-designer__signature-actions-row">
+                              <button
+                                className="pdf-template-designer__button pdf-template-designer__button--compact pdf-template-designer__button--primary"
+                                type="button"
+                                onClick={applyTypedSignature}
+                              >
+                                Apply typed signature
+                              </button>
+                              <button
+                                className="pdf-template-designer__button pdf-template-designer__button--compact"
+                                type="button"
+                                onClick={cancelTypedSignatureEditor}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+    </Fragment>
+  );
+
   if (isViewerMode || isReadOnlyMode) {
     const useScrollableDocumentLayout = isViewerMode || isReadOnlyMode;
     return (
@@ -5776,6 +6058,8 @@ export default function PdfDesignerCore(
               ? " pdf-template-designer__canvas--viewer"
               : ""
           }`}
+          ref={setScrollHost}
+          onScroll={isContinuousLayout ? handleContinuousScroll : undefined}
         >
           <div
             className={`pdf-template-designer__toolbar${
@@ -5785,6 +6069,12 @@ export default function PdfDesignerCore(
             }`}
           >
             <div className="pdf-template-designer__toolbar-group">
+              {isContinuousLayout && pdfDoc ? (
+                <div className="pdf-template-designer__status">
+                  Page {visiblePage} of {pageCount}
+                </div>
+              ) : (
+                <Fragment>
               <button
                 className="pdf-template-designer__button"
                 onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
@@ -5806,6 +6096,8 @@ export default function PdfDesignerCore(
               >
                 Next
               </button>
+                </Fragment>
+              )}
               <div className="pdf-template-designer__toolbar-jump">
                 <input
                   className="pdf-template-designer__input"
@@ -5922,7 +6214,40 @@ export default function PdfDesignerCore(
             {renderError ? (
               <div className="pdf-template-designer__alert">{renderError}</div>
             ) : null}
-            {hasRenderableDocument ? (
+            {hasRenderableDocument && isContinuousLayout && pdfDoc ? (
+              <div className="pdf-template-designer__pages">
+                {Array.from({ length: pageCount }, (_, idx) => {
+                  const size = pageSizes[idx] || pageSize;
+                  return (
+                    <div
+                      key={`page_${idx}`}
+                      className="pdf-template-designer__page"
+                      data-pdf-page={idx + 1}
+                      style={{
+                        width: size.width * renderScale,
+                        height: size.height * renderScale
+                      }}
+                    >
+                      <ContinuousPageCanvas
+                        pdfDoc={pdfDoc}
+                        pageNumber={idx + 1}
+                        scale={renderScale}
+                        scrollRoot={scrollHost}
+                      />
+                      {!isReadOnlyMode ? (
+                        <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
+                          {renderViewerOverlayContent(
+                            fields.filter((field) => field.page === idx),
+                            idx
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {hasRenderableDocument && !(isContinuousLayout && pdfDoc) ? (
               <div
                 className="pdf-template-designer__page"
                 style={{ width: renderWidth, height: renderHeight }}
@@ -5943,138 +6268,7 @@ export default function PdfDesignerCore(
                 ) : null}
                 {!isReadOnlyMode ? (
                   <div className="pdf-template-designer__overlay pdf-template-designer__overlay--viewer">
-                    {fieldsOnPage.map((field) => (
-                      <div
-                        key={field.id}
-                        className={`pdf-template-designer__viewer-field pdf-template-designer__viewer-field--${
-                          field.type
-                        }${
-                          viewerSaveAttempted &&
-                          missingViewerRequiredFieldIds.has(field.id)
-                            ? " is-required-missing"
-                            : ""
-                        }${
-                          activeViewerSignatureFieldId === field.id
-                            ? " is-active"
-                            : ""
-                        }`}
-                        style={{
-                          left: field.x * renderScale,
-                          top: field.y * renderScale,
-                          width: field.w * renderScale,
-                          height: field.h * renderScale,
-                          backgroundColor: field.transparentBackground
-                            ? "transparent"
-                            : normalizeBackgroundColor(
-                                field.backgroundColor,
-                                DEFAULT_FIELD_BACKGROUND_COLOR
-                              ),
-                          color: normalizeHexColor(
-                            field.textColor,
-                            DEFAULT_FIELD_TEXT_COLOR
-                          )
-                        }}
-                        onPointerDown={() => {
-                          if (field.type === "signature") {
-                            setActiveViewerSignatureFieldId(field.id);
-                            setViewerSignatureMessage(null);
-                          } else if (activeViewerSignatureFieldId) {
-                            setActiveViewerSignatureFieldId(null);
-                            activeSigWebCanvasRef.current = null;
-                            activeSigWebFieldKeyRef.current = null;
-                            stopSigWebForActiveField();
-                          }
-                        }}
-                      >
-                        {renderViewerFieldControl(field)}
-                      </div>
-                    ))}
-                    {activeViewerSignatureField ? (
-                      <div
-                        className={`pdf-template-designer__signature-actions${
-                          showTypedSignatureEditor
-                            ? " pdf-template-designer__signature-actions--stacked"
-                            : ""
-                        }`}
-                        style={{
-                          left: activeViewerSignatureField.x * renderScale,
-                          top:
-                            (activeViewerSignatureField.y +
-                              activeViewerSignatureField.h) *
-                              renderScale +
-                            6
-                        }}
-                        >
-                        <div className="pdf-template-designer__signature-actions-row">
-                          <button
-                            className="pdf-template-designer__button pdf-template-designer__button--compact"
-                            type="button"
-                            onClick={() =>
-                              clearViewerSignature(activeViewerSignatureField.key)
-                            }
-                          >
-                            Clear signature
-                          </button>
-                          <button
-                            className="pdf-template-designer__button pdf-template-designer__button--compact"
-                            type="button"
-                            onClick={openTypedSignatureEditor}
-                          >
-                            Type name
-                          </button>
-                          {sigWebState === "ready" ? (
-                            <button
-                              className="pdf-template-designer__button pdf-template-designer__button--compact"
-                              type="button"
-                              onClick={() =>
-                                importSignatureFromSigWeb(
-                                  activeViewerSignatureField.key
-                                )
-                              }
-                            >
-                              Use SigWeb
-                            </button>
-                          ) : null}
-                        </div>
-                        {showTypedSignatureEditor ? (
-                          <div className="pdf-template-designer__typed-signature-editor">
-                            <input
-                              className="pdf-template-designer__input"
-                              type="text"
-                              placeholder="Type your full name"
-                              value={typedSignatureDraft}
-                              onChange={(event) =>
-                                setTypedSignatureDraft(event.target.value)
-                              }
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  applyTypedSignature();
-                                }
-                                if (event.key === "Escape") {
-                                  cancelTypedSignatureEditor();
-                                }
-                              }}
-                            />
-                            <div className="pdf-template-designer__signature-actions-row">
-                              <button
-                                className="pdf-template-designer__button pdf-template-designer__button--compact pdf-template-designer__button--primary"
-                                type="button"
-                                onClick={applyTypedSignature}
-                              >
-                                Apply typed signature
-                              </button>
-                              <button
-                                className="pdf-template-designer__button pdf-template-designer__button--compact"
-                                type="button"
-                                onClick={cancelTypedSignatureEditor}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {renderViewerOverlayContent(fieldsOnPage, pageIndex)}
                   </div>
                 ) : null}
               </div>

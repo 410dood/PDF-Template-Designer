@@ -187,6 +187,13 @@
   overflow: visible;
 }
 
+.pdf-template-designer__pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
 .pdf-template-designer__page {
   position: relative;
   margin: 0 auto;

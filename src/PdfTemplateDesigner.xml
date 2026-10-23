@@ -535,15 +535,26 @@
         <propertyGroup caption="Integrations">
             <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
                 <caption>PDF.js worker URL</caption>
-                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/Text template for the PDF.js worker script URL. Leave empty to use the default worker URL.lt;versionText template for the PDF.js worker script URL. Leave empty to use the default worker URL.gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
+                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/&lt;version&gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
             </property>
             <property key="pdfJsScriptUrl" type="textTemplate" required="false">
                 <caption>PDF.js script URL</caption>
-                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.lt;versionText template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
+                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/&lt;version&gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
             </property>
             <property key="sigWebScriptUrl" type="textTemplate" required="false">
                 <caption>SigWeb script URL</caption>
                 <description>Optional URL to SigWebTablet.js for external signature pad integration in Viewer mode.</description>
+            </property>
+        </propertyGroup>
+
+        <propertyGroup caption="Page Layout">
+            <property key="pageLayout" type="enumeration" defaultValue="continuous" required="true">
+                <caption>Viewer page layout</caption>
+                <description>Viewer and Read-only PDF modes: Continuous stacks every page in one scrolling view (fields stay on their pages); Single page shows one page at a time with Prev/Next. Designer mode always shows one page.</description>
+                <enumerationValues>
+                    <enumerationValue key="continuous">Continuous scroll</enumerationValue>
+                    <enumerationValue key="single">Single page</enumerationValue>
+                </enumerationValues>
             </property>
         </propertyGroup>
 
