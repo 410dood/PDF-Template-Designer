@@ -2467,7 +2467,9 @@ function ContinuousPageCanvas({
       },
       { root: scrollRoot, rootMargin: "800px 0px" }
     );
-    observer.observe(canvas);
+    // Watch the full-size page box: until it renders, the canvas is a small default-size box
+    // at the page's top, which never intersects when the user lands mid-page (jump, field focus).
+    observer.observe(canvas.parentElement ?? canvas);
     return () => observer.disconnect();
   }, [scrollRoot, isNear]);
 
