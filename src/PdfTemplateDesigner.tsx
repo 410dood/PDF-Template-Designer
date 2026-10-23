@@ -1,4 +1,5 @@
-﻿import {
+﻿import { loadSharedPdfjs } from "./sharedPdfjs";
+import {
   createElement,
   ReactElement,
   useCallback,
@@ -262,13 +263,6 @@ interface PdfjsDocumentProxy {
   getFieldObjects?: () => Promise<Record<string, unknown>>;
 }
 
-interface PdfjsApi {
-  getDocument: (options: { data: ArrayBuffer }) => {
-    promise: Promise<PdfjsDocumentProxy>;
-  };
-  GlobalWorkerOptions: { workerSrc: string };
-}
-
 interface LoadedImage {
   url: string;
   width: number;
@@ -306,15 +300,6 @@ interface InlineSignatureCanvasProps {
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 612, height: 792 };
 const SNAP_SIZE = 5;
-const PDFJS_VERSION = "4.8.69";
-const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`;
-const PDFJS_WORKER_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
-const PDFJS_AMD_MODULE_IDS = [
-  "pdfjs-dist/build/pdf",
-  "pdfjs-dist/build/pdf.mjs",
-  "pdfjs-dist/legacy/build/pdf",
-  "pdfjs-dist/legacy/build/pdf.mjs"
-];
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
 const PALETTE_TYPE_DRAG_TYPE = "application/x-pdf-field-type";
@@ -326,8 +311,6 @@ const SIGWEB_CAPTURE_FUNCTION_CANDIDATES = [
   "GetSigImageBase64",
   "GetSigImage"
 ];
-let pdfjsLoader: Promise<PdfjsApi> | null = null;
-const pdfjsModuleLoaders = new Map<string, Promise<PdfjsApi>>();
 let fieldIdCounter = 0;
 
 const FIELD_DEFAULTS: Record<
@@ -1662,209 +1645,12 @@ function snapPositionToReferences(
   return { position: position + bestDelta, guide };
 }
 
-/**
- * Dynamic import that survives the widget bundler: a literal `import(url)` with a
- * variable would be rewritten for the AMD/CJS output, so build it at runtime.
- */
-function importEsModule(url: string): Promise<any> {
-  // eslint-disable-next-line no-new-func
-  return new Function("u", "return import(u)")(url);
-}
-
-/**
- * Load pdf.js as a PRIVATE module instance keyed by script URL.
- *
- * Never reuse `window.pdfjsLib`: other widgets on the same page (olari.PdfViewer
- * bundles pdf.js 4.10.x, the Mendix DocumentViewer ships its own 4.8.x) assign that
- * global as a side effect, and their API never matches the worker configured for this
- * widget ("The API version X does not match the Worker version Y"). A module import of
- * our own script URL gives us an instance whose GlobalWorkerOptions belong to us alone.
- */
-function loadPdfjsModule(scriptSrc: string): Promise<PdfjsApi> {
-  const cached = pdfjsModuleLoaders.get(scriptSrc);
-  if (cached) {
-    return cached;
-  }
-  const previousGlobal = (window as any).pdfjsLib;
-  const loader = importEsModule(scriptSrc)
-    .then((mod: any) => {
-      const lib = (mod && typeof mod.getDocument === "function" ? mod : mod?.default) as
-        | PdfjsApi
-        | undefined;
-      if (!lib || typeof lib.getDocument !== "function") {
-        throw new Error(`PDF.js module at ${scriptSrc} did not export getDocument.`);
-      }
-      // pdf.mjs builds also assign globalThis.pdfjsLib on import; put back whatever
-      // another widget had there so we do not break its expectations either.
-      if (previousGlobal && (window as any).pdfjsLib !== previousGlobal) {
-        (window as any).pdfjsLib = previousGlobal;
-      }
-      return lib;
-    })
-    .catch((error: unknown) => {
-      pdfjsModuleLoaders.delete(scriptSrc);
-      throw error instanceof Error
-        ? error
-        : new Error(`Failed to load PDF.js from ${scriptSrc}.`);
-    });
-  pdfjsModuleLoaders.set(scriptSrc, loader);
-  return loader;
-}
-
-function loadPdfjs(scriptSrc?: string): Promise<PdfjsApi> {
-  if (typeof window === "undefined") {
-    return Promise.reject(new Error("PDF.js is not available."));
-  }
-
-  const resolvedScriptSrc =
-    scriptSrc ||
-    resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
-    PDFJS_CDN;
-
-  if (isMjsScriptUrl(resolvedScriptSrc)) {
-    return loadPdfjsModule(resolvedScriptSrc);
-  }
-
-  // Legacy (non-module) script path: pdf.min.js can only expose itself through the
-  // global / AMD loader, so reusing an existing global is the best we can do there.
-  const existing = (window as any).pdfjsLib as PdfjsApi | undefined;
-  if (existing) {
-    return Promise.resolve(existing);
-  }
-
-  if (pdfjsLoader) {
-    return pdfjsLoader;
-  }
-
-  pdfjsLoader = new Promise((resolve, reject) => {
-    const rejectWithReset = (message: string) => {
-      pdfjsLoader = null;
-      reject(new Error(message));
-    };
-    const script = document.createElement("script");
-    if (isMjsScriptUrl(resolvedScriptSrc)) {
-      // pdf.min.mjs must be loaded as a module script (it contains ESM exports).
-      script.type = "module";
-    }
-    script.src = resolvedScriptSrc;
-    script.async = true;
-    script.onload = () => {
-      const lib = (window as any).pdfjsLib as PdfjsApi | undefined;
-      if (!lib) {
-        // In AMD environments (e.g. Mendix runtime), pdf.min.js can define
-        // "pdfjs-dist/build/pdf" without setting window.pdfjsLib immediately.
-        resolvePdfjsFromAmd().then((amdLib) => {
-          const resolved = (window as any).pdfjsLib || amdLib;
-          if (!resolved) {
-            rejectWithReset("PDF.js failed to initialize.");
-            return;
-          }
-          if (!(window as any).pdfjsLib) {
-            (window as any).pdfjsLib = resolved;
-          }
-          resolve(resolved);
-        });
-        return;
-      }
-      resolve(lib);
-    };
-    script.onerror = () =>
-      rejectWithReset(`Failed to load PDF.js from ${resolvedScriptSrc}.`);
-    document.head.appendChild(script);
-  });
-
-  return pdfjsLoader;
-}
-
 function resolveWorkerUrlValue(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function isMjsScriptUrl(url?: string): boolean {
-  return Boolean(url && /\.mjs(?:$|[?#])/i.test(url));
-}
-
-function resolvePdfjsFromAmd(): Promise<PdfjsApi | undefined> {
-  if (typeof window === "undefined") {
-    return Promise.resolve(undefined);
-  }
-  const req = (window as any).require;
-  if (typeof req !== "function") {
-    return Promise.resolve(undefined);
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value?: PdfjsApi) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(value);
-    };
-    const moduleIds = Array.from(new Set(PDFJS_AMD_MODULE_IDS));
-    const tryLoadModule = (index: number) => {
-      if (settled) {
-        return;
-      }
-      if (index >= moduleIds.length) {
-        finish(undefined);
-        return;
-      }
-      try {
-        req(
-          [moduleIds[index]],
-          (module: unknown) => {
-            const amdLib = ((module as any)?.default || module) as
-              | PdfjsApi
-              | undefined;
-            const version = (amdLib as any)?.version;
-            if (typeof version === "string" && version !== PDFJS_VERSION) {
-              console.warn(
-                `Ignoring AMD PDF.js module '${moduleIds[index]}' because version '${version}' does not match expected '${PDFJS_VERSION}'.`
-              );
-              tryLoadModule(index + 1);
-              return;
-            }
-            finish(amdLib);
-          },
-          () => tryLoadModule(index + 1)
-        );
-      } catch (_error) {
-        tryLoadModule(index + 1);
-      }
-    };
-    tryLoadModule(0);
-
-    // Avoid hanging if AMD never resolves.
-    setTimeout(() => finish(undefined), 2000);
-  });
-}
-
-function deriveScriptUrlFromWorkerUrl(workerUrl?: string): string | undefined {
-  if (!workerUrl) {
-    return undefined;
-  }
-  const derived = workerUrl.replace(
-    /pdf\.worker(\.min)?\.(m?js)(?=([?#]|$))/i,
-    "pdf$1.$2"
-  );
-  return derived !== workerUrl ? derived : undefined;
-}
-
-function deriveWorkerUrlFromScriptUrl(scriptUrl?: string): string | undefined {
-  if (!scriptUrl) {
-    return undefined;
-  }
-  const derived = scriptUrl.replace(
-    /pdf(\.min)?\.(m?js)(?=([?#]|$))/i,
-    "pdf.worker$1.$2"
-  );
-  return derived !== scriptUrl ? derived : undefined;
 }
 
 function loadExternalScript(scriptSrc: string): Promise<void> {
@@ -3157,59 +2943,19 @@ export default function PdfDesignerCore(
     };
   }, [revokeImageObjectUrl]);
 
-  const workerUrlResolution = useMemo(
-    () => resolveTextTemplateValue(props.pdfJsWorkerUrl),
-    [props.pdfJsWorkerUrl]
-  );
-  const configuredWorkerUrl = workerUrlResolution.value;
-
-  const scriptUrlResolution = useMemo(
-    () => resolveTextTemplateValue((props as any).pdfJsScriptUrl),
-    [(props as any).pdfJsScriptUrl]
-  );
-  const configuredScriptUrl = scriptUrlResolution.value;
   const sigWebUrlResolution = useMemo(
     () => resolveTextTemplateValue((props as any).sigWebScriptUrl),
     [(props as any).sigWebScriptUrl]
   );
   const configuredSigWebUrl = sigWebUrlResolution.value;
-  const existingPdfjsLib = (
-    typeof window !== "undefined" ? (window as any).pdfjsLib : undefined
-  ) as PdfjsApi | undefined;
-  const derivedScriptUrl = deriveScriptUrlFromWorkerUrl(configuredWorkerUrl);
-  const explicitScriptUrl =
-    configuredScriptUrl ||
-    resolveWorkerUrlValue((window as any).pdfjsScriptSrc) ||
-    derivedScriptUrl;
-  const resolvedScriptUrl =
-    explicitScriptUrl || (!existingPdfjsLib ? PDFJS_CDN : undefined);
-  const existingWorkerUrl = resolveWorkerUrlValue(
-    (existingPdfjsLib as any)?.GlobalWorkerOptions?.workerSrc
-  );
-  const defaultWorkerUrl =
-    resolveWorkerUrlValue((window as any).pdfjsWorkerSrc) ||
-    existingWorkerUrl ||
-    deriveWorkerUrlFromScriptUrl(resolvedScriptUrl) ||
-    (!existingPdfjsLib ? PDFJS_WORKER_CDN : undefined);
-  const resolvedWorkerUrl = configuredWorkerUrl || defaultWorkerUrl;
-  const isPdfJsConfigLoading =
-    workerUrlResolution.isLoading || scriptUrlResolution.isLoading;
-
+  // pdf.js comes from the app's single pinned copy (sharedPdfjs.ts), shared with
+  // olari.PdfViewer. The pdfJsScriptUrl / pdfJsWorkerUrl props are ignored since 0.4.0.
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    if (isPdfJsConfigLoading) {
-      return;
-    }
-
-    loadPdfjs(resolvedScriptUrl)
-      .then((pdfjs) => {
-        pdfjs.GlobalWorkerOptions.workerSrc =
-          resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
-      })
-      .catch(() => undefined);
-  }, [isPdfJsConfigLoading, resolvedScriptUrl, resolvedWorkerUrl]);
+    loadSharedPdfjs().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !isViewerMode) {
@@ -3553,10 +3299,6 @@ export default function PdfDesignerCore(
       revokeImageObjectUrl();
       return;
     }
-    if (isPdfJsConfigLoading) {
-      return;
-    }
-
     let cancelled = false;
     const loadPdf = async () => {
       setLoadingPdf(true);
@@ -3578,10 +3320,13 @@ export default function PdfDesignerCore(
         const data = await blob.arrayBuffer();
 
         try {
-          const pdfjs = await loadPdfjs(resolvedScriptUrl);
-          pdfjs.GlobalWorkerOptions.workerSrc =
-            resolvedWorkerUrl || pdfjs.GlobalWorkerOptions.workerSrc;
-          const doc = await pdfjs.getDocument({ data }).promise;
+          const pdfjs = await loadSharedPdfjs();
+          // Untrusted uploads (pentest F-2026-18787): no eval'd font programs, no XFA.
+          const doc = await pdfjs.getDocument({
+            data,
+            isEvalSupported: false,
+            enableXfa: false
+          }).promise as unknown as PdfjsDocumentProxy;
           if (!cancelled) {
             setPdfDoc(doc);
             setPageIndex(0);
@@ -3643,9 +3388,6 @@ export default function PdfDesignerCore(
     };
   }, [
     basePdfId,
-    isPdfJsConfigLoading,
-    resolvedScriptUrl,
-    resolvedWorkerUrl,
     revokeImageObjectUrl,
     pdfRefreshCounter
   ]);

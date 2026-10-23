@@ -535,11 +535,11 @@
         <propertyGroup caption="Integrations">
             <property key="pdfJsWorkerUrl" type="textTemplate" required="false">
                 <caption>PDF.js worker URL</caption>
-                <description>Text template for the PDF.js worker script URL. Leave empty to use the default worker URL.</description>
+                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/Text template for the PDF.js worker script URL. Leave empty to use the default worker URL.lt;versionText template for the PDF.js worker script URL. Leave empty to use the default worker URL.gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
             </property>
             <property key="pdfJsScriptUrl" type="textTemplate" required="false">
                 <caption>PDF.js script URL</caption>
-                <description>Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.</description>
+                <description>Ignored since 0.4.0: pdf.js always loads from the app's pinned copy at /resources/pdfjs/Text template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.lt;versionText template for the PDF.js core script URL (pdf.min.js). Leave empty to auto-derive from the worker URL or use default.gt;/ (shared with olari.PdfViewer). Kept so existing pages stay valid.</description>
             </property>
             <property key="sigWebScriptUrl" type="textTemplate" required="false">
                 <caption>SigWeb script URL</caption>
