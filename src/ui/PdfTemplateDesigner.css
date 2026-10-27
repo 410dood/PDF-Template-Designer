@@ -1450,9 +1450,3 @@
   color: #6b7688;
   line-height: 1.4;
 }
-/* The palette is too narrow for the picker: float it beside the sidebar. */
-.pdf-template-designer__token-palette-more .pdf-template-designer__token-picker {
-  top: auto;
-  bottom: 0;
-  left: calc(100% + 10px);
-}

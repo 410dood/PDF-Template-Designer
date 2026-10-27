@@ -3135,7 +3135,7 @@ export default function PdfDesignerCore(
   // Insert client data picker: "insert" appends to the selected field's content,
   // "add" drops a new token field on the page.
   const [tokenPicker, setTokenPicker] = useState<
-    { mode: "insert" | "add"; tab: TokenKind } | null
+    { mode: "insert" | "add"; tab: TokenKind; anchor?: { x: number; y: number } } | null
   >(null);
   const [tokenSearch, setTokenSearch] = useState("");
   const [recentTokenKeys, setRecentTokenKeys] = useState<string[]>(() =>
@@ -4783,10 +4783,27 @@ export default function PdfDesignerCore(
     [addFieldCentered, buildOverridesForTool]
   );
 
-  const openTokenPicker = useCallback((mode: "insert" | "add") => {
-    setTokenSearch("");
-    setTokenPicker({ mode, tab: "client" });
-  }, []);
+  const openTokenPicker = useCallback(
+    (mode: "insert" | "add", anchorElement?: HTMLElement | null) => {
+      setTokenSearch("");
+      // The palette sidebar clips overflow, so the "add" picker is fixed-positioned
+      // beside the button that opened it.
+      const rect = anchorElement?.getBoundingClientRect();
+      setTokenPicker({
+        mode,
+        tab: "client",
+        anchor: rect
+          ? {
+              x: Math.round(rect.right + 10),
+              y: Math.round(
+                Math.max(8, Math.min(rect.top, window.innerHeight - 440))
+              )
+            }
+          : undefined
+      });
+    },
+    []
+  );
   const closeTokenPicker = useCallback(() => setTokenPicker(null), []);
   const handleTokenPick = useCallback(
     (entry: TokenCatalogEntry) => {
@@ -4865,6 +4882,16 @@ export default function PdfDesignerCore(
         className="pdf-template-designer__token-picker"
         role="dialog"
         aria-label="Insert client data"
+        style={
+          tokenPicker.anchor
+            ? {
+                position: "fixed",
+                left: tokenPicker.anchor.x,
+                top: tokenPicker.anchor.y,
+                bottom: "auto"
+              }
+            : undefined
+        }
       >
         <div className="pdf-template-designer__token-picker-head">
           <span className="pdf-template-designer__token-picker-title">
@@ -6812,10 +6839,10 @@ export default function PdfDesignerCore(
                         <button
                           type="button"
                           className="pdf-template-designer__button pdf-template-designer__palette-tool pdf-template-designer__palette-tool--more"
-                          onClick={() =>
+                          onClick={(event) =>
                             tokenPicker?.mode === "add"
                               ? closeTokenPicker()
-                              : openTokenPicker("add")
+                              : openTokenPicker("add", event.currentTarget)
                           }
                         >
                           <span className="pdf-template-designer__palette-tool-text">
