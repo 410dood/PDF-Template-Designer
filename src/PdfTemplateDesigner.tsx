@@ -3139,6 +3139,8 @@ export default function PdfDesignerCore(
     { mode: "insert" | "add"; tab: TokenKind; anchor?: { x: number; y: number } } | null
   >(null);
   const [tokenSearch, setTokenSearch] = useState("");
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [resetArmed, setResetArmed] = useState(false);
   const [recentTokenKeys, setRecentTokenKeys] = useState<string[]>(() =>
     readRecentTokenKeys()
   );
@@ -5249,24 +5251,6 @@ export default function PdfDesignerCore(
     handleHeaderCheckboxChange
   ]);
 
-  const handleReloadTemplateClick = useCallback(() => {
-    if (isViewerMode || isReadOnlyMode) {
-      return;
-    }
-    const parsed = parseTemplateJson(templateJsonText);
-    if (parsed.error) {
-      setJsonError(parsed.error);
-      return;
-    }
-    setJsonError(null);
-    setFields(parsed.fields);
-    undoStackRef.current = [];
-    redoStackRef.current = [];
-    setGuides([]);
-    setSelectedFieldId(parsed.fields[0]?.id || null);
-    lastLoadedJsonRef.current = templateJsonText;
-  }, [isViewerMode, isReadOnlyMode, templateJsonText]);
-
   const handleExportTemplateClick = useCallback(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return;
@@ -6532,6 +6516,7 @@ export default function PdfDesignerCore(
                 className="pdf-template-designer__button"
                 onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
                 type="button"
+                title="Go to the previous page of the PDF"
                 disabled={pageIndex === 0}
               >
                 Prev
@@ -6545,6 +6530,7 @@ export default function PdfDesignerCore(
                   setPageIndex(Math.min(pageCount - 1, pageIndex + 1))
                 }
                 type="button"
+                title="Go to the next page of the PDF"
                 disabled={pageIndex >= pageCount - 1}
               >
                 Next
@@ -6557,6 +6543,8 @@ export default function PdfDesignerCore(
                   type="number"
                   min={1}
                   max={pageCount}
+                  title="Type a page number and press Enter to jump to it"
+                  aria-label="Go to page"
                   value={pageJumpInput}
                   onChange={(event) => setPageJumpInput(event.target.value)}
                   onBlur={applyPageJump}
@@ -6572,6 +6560,8 @@ export default function PdfDesignerCore(
               <select
                 className="pdf-template-designer__select"
                 value={zoom}
+                title="Zoom the page in or out. Only changes what you see, not the template."
+                aria-label="Zoom"
                 onChange={(event) => setZoom(Number(event.target.value))}
               >
                 <option value={0.75}>75%</option>
@@ -6918,47 +6908,110 @@ export default function PdfDesignerCore(
                 style={{ display: "none" }}
                 onChange={handleReplacePdfFileChange}
               />
-              <button
-                className="pdf-template-designer__button"
-                type="button"
-                onClick={handleReloadTemplateClick}
-              >
-                Load
-              </button>
-              <button
-                className="pdf-template-designer__button"
-                onClick={clearFields}
-                type="button"
-              >
-                Reset
-              </button>
-              <button
-                className="pdf-template-designer__button"
-                onClick={handleExportTemplateClick}
-                type="button"
-              >
-                Export
-              </button>
-              {showImportTemplateButton && !isViewerMode && !isReadOnlyMode ? (
-                <button
-                  className="pdf-template-designer__button"
-                  onClick={handleImportTemplateClick}
-                  type="button"
-                  title="Load a template JSON file from disk onto the canvas"
-                >
-                  Import
-                </button>
-              ) : null}
               {showReplacePdfButton && !isViewerMode && !isReadOnlyMode ? (
                 <button
                   className="pdf-template-designer__button"
                   onClick={handleReplacePdfClick}
                   type="button"
-                  title="Upload a new PDF to replace the base document (keeps fields)"
+                  title="Swap the PDF behind this template for a new file. Your fields stay where they are."
                   disabled={!basePdfId}
                 >
                   Replace PDF
                 </button>
+              ) : null}
+              {!isViewerMode && !isReadOnlyMode ? (
+                <div className="pdf-template-designer__more">
+                  <button
+                    className={`pdf-template-designer__button${
+                      moreMenuOpen ? " is-active" : ""
+                    }`}
+                    type="button"
+                    title="Export, import or clear this template"
+                    aria-haspopup="menu"
+                    aria-expanded={moreMenuOpen}
+                    onClick={() => {
+                      setResetArmed(false);
+                      setMoreMenuOpen((open) => !open);
+                    }}
+                  >
+                    More ▾
+                  </button>
+                  {moreMenuOpen ? (
+                    <div className="pdf-template-designer__more-menu" role="menu">
+                      <button
+                        className="pdf-template-designer__more-item"
+                        type="button"
+                        role="menuitem"
+                        title="Download this template's field layout as a JSON file, for backup or to copy it to another form"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          handleExportTemplateClick();
+                        }}
+                      >
+                        <span>Export layout</span>
+                        <span className="pdf-template-designer__more-hint">
+                          Download the fields as a JSON file
+                        </span>
+                      </button>
+                      {showImportTemplateButton ? (
+                        <button
+                          className="pdf-template-designer__more-item"
+                          type="button"
+                          role="menuitem"
+                          title="Replace the fields on this template with a layout JSON file exported earlier. The PDF itself is not changed."
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            handleImportTemplateClick();
+                          }}
+                        >
+                          <span>Import layout…</span>
+                          <span className="pdf-template-designer__more-hint">
+                            Load fields from an exported JSON file
+                          </span>
+                        </button>
+                      ) : null}
+                      {resetArmed ? (
+                        <div className="pdf-template-designer__more-confirm">
+                          <span>Remove all {fields.length} fields from this template?</span>
+                          <div>
+                            <button
+                              className="pdf-template-designer__button pdf-template-designer__button--danger"
+                              type="button"
+                              onClick={() => {
+                                setResetArmed(false);
+                                setMoreMenuOpen(false);
+                                clearFields();
+                              }}
+                            >
+                              Clear fields
+                            </button>
+                            <button
+                              className="pdf-template-designer__button"
+                              type="button"
+                              onClick={() => setResetArmed(false)}
+                            >
+                              Keep them
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          className="pdf-template-designer__more-item pdf-template-designer__more-item--danger"
+                          type="button"
+                          role="menuitem"
+                          title="Remove every field from this template. You can Undo afterwards, and nothing is saved until you click Save."
+                          disabled={fields.length === 0}
+                          onClick={() => setResetArmed(true)}
+                        >
+                          <span>Clear all fields…</span>
+                          <span className="pdf-template-designer__more-hint">
+                            Start the layout over (undoable)
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {showPrintButton ? (
                 <button
@@ -7001,6 +7054,7 @@ export default function PdfDesignerCore(
                 className="pdf-template-designer__button"
                 onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
                 type="button"
+                title="Go to the previous page of the PDF"
                 disabled={pageIndex === 0}
               >
                 Prev
@@ -7014,6 +7068,7 @@ export default function PdfDesignerCore(
                   setPageIndex(Math.min(pageCount - 1, pageIndex + 1))
                 }
                 type="button"
+                title="Go to the next page of the PDF"
                 disabled={pageIndex >= pageCount - 1}
               >
                 Next
@@ -7024,6 +7079,8 @@ export default function PdfDesignerCore(
                   type="number"
                   min={1}
                   max={pageCount}
+                  title="Type a page number and press Enter to jump to it"
+                  aria-label="Go to page"
                   value={pageJumpInput}
                   onChange={(event) => setPageJumpInput(event.target.value)}
                   onBlur={applyPageJump}
@@ -7037,6 +7094,8 @@ export default function PdfDesignerCore(
               <select
                 className="pdf-template-designer__select"
                 value={zoom}
+                title="Zoom the page in or out. Only changes what you see, not the template."
+                aria-label="Zoom"
                 onChange={(event) => setZoom(Number(event.target.value))}
               >
                 <option value={0.75}>75%</option>
@@ -7051,6 +7110,7 @@ export default function PdfDesignerCore(
               <button
                 className="pdf-template-designer__button"
                 type="button"
+                title="Undo the last change (Ctrl+Z)"
                 onClick={undo}
                 disabled={undoDisabled}
               >
@@ -7059,12 +7119,16 @@ export default function PdfDesignerCore(
               <button
                 className="pdf-template-designer__button"
                 type="button"
+                title="Redo the change you just undid (Ctrl+Shift+Z)"
                 onClick={redo}
                 disabled={redoDisabled}
               >
                 Redo
               </button>
-              <label className="pdf-template-designer__toggle">
+              <label
+                className="pdf-template-designer__toggle"
+                title="Snap fields to a grid and to the edges of nearby fields while you drag"
+              >
                 <input
                   type="checkbox"
                   checked={snapEnabled}
