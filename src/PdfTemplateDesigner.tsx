@@ -3118,6 +3118,7 @@ export default function PdfDesignerCore(
   const undoStackRef = useRef<TemplateField[][]>([]);
   const redoStackRef = useRef<TemplateField[][]>([]);
   const lastLoadedJsonRef = useRef<string | undefined>(undefined);
+  const previousLoadedJsonRef = useRef<string | undefined>(undefined);
   const lastLoadedDataJsonRef = useRef<string | undefined>(undefined);
   const lastParsedDataJsonRef = useRef<Record<string, unknown>>({});
   const viewerFieldValuesDirtyRef = useRef(false);
@@ -3441,6 +3442,12 @@ export default function PdfDesignerCore(
 
     const incoming = templateJsonValue.value || "";
     if (incoming === lastLoadedJsonRef.current) {
+      return;
+    }
+    // After commitTemplate, Mendix re-renders once with the attribute's previous value
+    // before the new one lands. That echo is not an external change: ignoring it keeps
+    // the undo/redo history (and the just-edited fields) intact.
+    if (incoming === previousLoadedJsonRef.current) {
       return;
     }
 
@@ -4005,6 +4012,7 @@ export default function PdfDesignerCore(
     ) => {
       const { runSaveAction = false, runOnChangeAction = true } = options;
       const payload = buildTemplateJson(nextFields, basePdfId);
+      previousLoadedJsonRef.current = lastLoadedJsonRef.current;
       lastLoadedJsonRef.current = payload;
 
       const attribute = dataSourceItem?.templateJsonAttr;
