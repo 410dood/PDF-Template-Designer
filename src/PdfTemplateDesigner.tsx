@@ -45,6 +45,11 @@ export interface PdfDesignerCoreProps {
   fieldKeySourceMode?: "manual" | "datasource" | "json";
   fieldKeyOptionsSource?: ListValue;
   fieldKeyOptionAttribute?: ListAttributeValue<string | Big>;
+  tokenCatalogSource?: ListValue;
+  tokenCatalogKeyAttr?: ListAttributeValue<string>;
+  tokenCatalogLabelAttr?: ListAttributeValue<string>;
+  tokenCatalogKindAttr?: ListAttributeValue<string>;
+  paletteTokenKeys?: string;
   pdfJsWorkerUrl?: DynamicValue<string>;
   pdfJsScriptUrl?: DynamicValue<string>;
   sigWebScriptUrl?: DynamicValue<string>;
@@ -306,6 +311,134 @@ const SNAP_SIZE = 5;
 const HISTORY_LIMIT = 100;
 const ALIGN_TOLERANCE = 4;
 const PALETTE_TYPE_DRAG_TYPE = "application/x-pdf-field-type";
+/* Client data (tokens): catalog rows come from the tokenCatalogSource datasource
+   (FormStudio.TokenDef). A token field is a multiVariableText whose content holds
+   {token.key} placeholders; admins only ever see the catalog label. */
+const TOKEN_TOOL_ID_PREFIX = "token:";
+const TOKEN_FIELD_KEY_BASE = "tokenText";
+const TOKEN_RECENT_STORAGE_KEY = "pdfTemplateDesigner.recentTokens";
+const TOKEN_PLACEHOLDER_PATTERN = /\{\s*([^{}]+?)\s*\}/g;
+type TokenKind = "client" | "doc" | "computed" | "other";
+interface TokenCatalogEntry {
+  key: string;
+  label: string;
+  kind: TokenKind;
+}
+type TokenContentSegment =
+  | { kind: "text"; value: string }
+  | { kind: "token"; key: string };
+const TOKEN_SAMPLE_VALUES: Record<string, string> = {
+  "client.full_name": "Madison Welch",
+  "client.first_name": "Madison",
+  "client.last_name": "Welch",
+  "client.dob": "01/02/1990",
+  "client.chart_id": "WEMA046517",
+  "client.record_id": "1047",
+  "client.gender": "Female",
+  "doc.title": "Property Receipt",
+  "doc.status": "Draft",
+  "doc.provider_name": "Madison Gill",
+  "sys.date": "10/27/2026",
+  "sys.time": "09:41",
+  "sys.datetime": "10/27/2026 09:41"
+};
+function normalizeTokenKind(raw: unknown, key: string): TokenKind {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (value === "client") {
+    return "client";
+  }
+  if (value === "doc" || value === "document") {
+    return "doc";
+  }
+  if (value === "computed" || value === "sys") {
+    return "computed";
+  }
+  const prefix = key.split(".")[0].toLowerCase();
+  if (prefix === "client") {
+    return "client";
+  }
+  if (prefix === "doc") {
+    return "doc";
+  }
+  if (prefix === "sys" || key.startsWith("__")) {
+    return "computed";
+  }
+  return "other";
+}
+function parseTokenContentSegments(text: string): TokenContentSegment[] {
+  const segments: TokenContentSegment[] = [];
+  let last = 0;
+  const source = text || "";
+  TOKEN_PLACEHOLDER_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_PLACEHOLDER_PATTERN.exec(source)) !== null) {
+    segments.push({ kind: "text", value: source.slice(last, match.index) });
+    segments.push({ kind: "token", key: match[1].trim() });
+    last = match.index + match[0].length;
+  }
+  segments.push({ kind: "text", value: source.slice(last) });
+  return segments;
+}
+function serializeTokenContentSegments(segments: TokenContentSegment[]): string {
+  return segments
+    .map((segment) =>
+      segment.kind === "token" ? `{${segment.key}}` : segment.value
+    )
+    .join("");
+}
+function contentHasTokens(text: string): boolean {
+  TOKEN_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return TOKEN_PLACEHOLDER_PATTERN.test(text || "");
+}
+function appendTokenToContent(text: string, key: string): string {
+  const base = text || "";
+  const needsSpace = base.length > 0 && !/\s$/.test(base);
+  return `${base}${needsSpace ? " " : ""}{${key}}`;
+}
+function readRecentTokenKeys(): string[] {
+  try {
+    const raw = window.localStorage.getItem(TOKEN_RECENT_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch (_error) {
+    return [];
+  }
+}
+function rememberRecentTokenKey(key: string): string[] {
+  const next = [key, ...readRecentTokenKeys().filter((item) => item !== key)].slice(0, 5);
+  try {
+    window.localStorage.setItem(TOKEN_RECENT_STORAGE_KEY, JSON.stringify(next));
+  } catch (_error) {
+    /* storage unavailable: recents are a convenience only */
+  }
+  return next;
+}
+function tokenGlyph(kind: TokenKind): ReactElement {
+  if (kind === "computed") {
+    return (
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+  if (kind === "doc") {
+    return (
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 3h8l4 4v14H6z" />
+        <path d="M9 12h6M9 16h6" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+    </svg>
+  );
+}
 /** Shown (as a soft notice, not an error) when no Topaz pad is detected. The form stays fully usable. */
 const SIGWEB_NO_PAD_MESSAGE =
   "No signature pad detected. You can still fill out this form. To capture a signature, plug in the Topaz pad, make sure SigWeb is running, and allow the browser's connection prompt if one appears.";
@@ -2885,12 +3018,83 @@ export default function PdfDesignerCore(
     }
     return map;
   }, [props]);
+  const tokenCatalog = useMemo<TokenCatalogEntry[]>(() => {
+    const source = props.tokenCatalogSource;
+    const keyAttr = props.tokenCatalogKeyAttr;
+    if (!source || source.status !== "available" || !keyAttr) {
+      return [];
+    }
+    const entries: TokenCatalogEntry[] = [];
+    const seen = new Set<string>();
+    for (const item of source.items || []) {
+      const key = String(keyAttr.get(item).value ?? "").trim();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const label = String(props.tokenCatalogLabelAttr?.get(item).value ?? "").trim();
+      const kindRaw = props.tokenCatalogKindAttr?.get(item).value;
+      entries.push({
+        key,
+        label: label || key,
+        kind: normalizeTokenKind(kindRaw, key)
+      });
+    }
+    return entries;
+  }, [
+    props.tokenCatalogSource,
+    props.tokenCatalogSource?.status,
+    props.tokenCatalogSource?.items,
+    props.tokenCatalogKeyAttr,
+    props.tokenCatalogLabelAttr,
+    props.tokenCatalogKindAttr
+  ]);
+  const tokenLabelByKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const entry of tokenCatalog) {
+      map[entry.key] = entry.label;
+    }
+    return map;
+  }, [tokenCatalog]);
+  const hasTokenCatalog = tokenCatalog.length > 0;
+  const tokenToolItems = useMemo<(typeof TOOL_RAIL_ITEMS)[number][]>(() => {
+    if (!hasTokenCatalog) {
+      return [];
+    }
+    const wanted = (props.paletteTokenKeys || "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    return wanted
+      .map((key) => tokenCatalog.find((entry) => entry.key === key))
+      .filter((entry): entry is TokenCatalogEntry => Boolean(entry))
+      .map((entry) => ({
+        id: `${TOKEN_TOOL_ID_PREFIX}${entry.key}`,
+        type: "multiVariableText" as FieldType,
+        glyph: "",
+        tooltip: `${entry.label} (filled automatically)`,
+        label: entry.label,
+        keyBase: TOKEN_FIELD_KEY_BASE,
+        seedLabel: "",
+        seedVariablesSampleData: `{${entry.key}}`,
+        showLabel: false,
+        w: 220,
+        h: 22
+      }));
+  }, [hasTokenCatalog, props.paletteTokenKeys, tokenCatalog]);
   const visibleToolRailItems = useMemo(
     () =>
       TOOL_RAIL_ITEMS.filter(
-        (tool) => paletteToolVisibilityById[tool.id] !== false
+        (tool) =>
+          paletteToolVisibilityById[tool.id] !== false &&
+          // the generic Token item is replaced by the Client data group
+          !(hasTokenCatalog && tool.id === TOKEN_FIELD_KEY_BASE)
       ),
-    [paletteToolVisibilityById]
+    [hasTokenCatalog, paletteToolVisibilityById]
+  );
+  const placementToolCandidates = useMemo(
+    () => [...visibleToolRailItems, ...tokenToolItems],
+    [tokenToolItems, visibleToolRailItems]
   );
   const hasVisibleFieldPropertyControls =
     showPropertyKey ||
@@ -2928,6 +3132,15 @@ export default function PdfDesignerCore(
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [placementToolId, setPlacementToolId] = useState<string | null>(null);
+  // Insert client data picker: "insert" appends to the selected field's content,
+  // "add" drops a new token field on the page.
+  const [tokenPicker, setTokenPicker] = useState<
+    { mode: "insert" | "add"; tab: TokenKind } | null
+  >(null);
+  const [tokenSearch, setTokenSearch] = useState("");
+  const [recentTokenKeys, setRecentTokenKeys] = useState<string[]>(() =>
+    readRecentTokenKeys()
+  );
   const [guides, setGuides] = useState<GuideLine[]>([]);
   const [snapEnabled, setSnapEnabled] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -4501,8 +4714,9 @@ export default function PdfDesignerCore(
 
   const selectedPlacementTool = useMemo(
     () =>
-      visibleToolRailItems.find((tool) => tool.id === placementToolId) || null,
-    [placementToolId, visibleToolRailItems]
+      placementToolCandidates.find((tool) => tool.id === placementToolId) ||
+      null,
+    [placementToolId, placementToolCandidates]
   );
   useEffect(() => {
     if (placementToolId && !selectedPlacementTool) {
@@ -4569,6 +4783,157 @@ export default function PdfDesignerCore(
     [addFieldCentered, buildOverridesForTool]
   );
 
+  const openTokenPicker = useCallback((mode: "insert" | "add") => {
+    setTokenSearch("");
+    setTokenPicker({ mode, tab: "client" });
+  }, []);
+  const closeTokenPicker = useCallback(() => setTokenPicker(null), []);
+  const handleTokenPick = useCallback(
+    (entry: TokenCatalogEntry) => {
+      setRecentTokenKeys(rememberRecentTokenKey(entry.key));
+      if (tokenPicker?.mode === "add") {
+        addFieldCentered("multiVariableText", {
+          key: nextPrefixedFieldKey(TOKEN_FIELD_KEY_BASE, fieldsRef.current),
+          label: "",
+          variablesSampleData: `{${entry.key}}`,
+          showLabel: false,
+          w: 220,
+          h: 22
+        });
+      } else {
+        const target = fieldsRef.current.find(
+          (field) => field.id === selectedFieldIdRef.current
+        );
+        if (target) {
+          updateField(target.id, {
+            variablesSampleData: appendTokenToContent(
+              target.variablesSampleData,
+              entry.key
+            )
+          });
+        }
+      }
+      setTokenPicker(null);
+    },
+    [addFieldCentered, tokenPicker, updateField]
+  );
+  const renderTokenPicker = useCallback(() => {
+    if (!tokenPicker) {
+      return null;
+    }
+    const search = tokenSearch.trim().toLowerCase();
+    const inTab = tokenCatalog.filter((entry) =>
+      tokenPicker.tab === "computed"
+        ? entry.kind === "computed"
+        : tokenPicker.tab === "doc"
+        ? entry.kind === "doc"
+        : entry.kind === "client" || entry.kind === "other"
+    );
+    const visible = (search ? tokenCatalog : inTab).filter(
+      (entry) =>
+        !search ||
+        entry.label.toLowerCase().includes(search) ||
+        entry.key.toLowerCase().includes(search)
+    );
+    const recent = search
+      ? []
+      : recentTokenKeys
+          .map((key) => tokenCatalog.find((entry) => entry.key === key))
+          .filter((entry): entry is TokenCatalogEntry => Boolean(entry));
+    const tabs: Array<{ id: TokenKind; label: string }> = [
+      { id: "client", label: "Client" },
+      { id: "doc", label: "Document" },
+      { id: "computed", label: "Dates" }
+    ];
+    const renderRow = (entry: TokenCatalogEntry) => (
+      <button
+        key={`pick_${entry.key}`}
+        type="button"
+        className="pdf-template-designer__token-row"
+        onClick={() => handleTokenPick(entry)}
+      >
+        <span className="pdf-template-designer__token-row-label">
+          {entry.label}
+        </span>
+        <span className="pdf-template-designer__token-row-sample">
+          {TOKEN_SAMPLE_VALUES[entry.key] || ""}
+        </span>
+      </button>
+    );
+    return (
+      <div
+        className="pdf-template-designer__token-picker"
+        role="dialog"
+        aria-label="Insert client data"
+      >
+        <div className="pdf-template-designer__token-picker-head">
+          <span className="pdf-template-designer__token-picker-title">
+            {tokenPicker.mode === "add" ? "Add client data" : "Insert client data"}
+          </span>
+          <button
+            type="button"
+            className="pdf-template-designer__token-picker-close"
+            aria-label="Close"
+            onClick={closeTokenPicker}
+          >
+            ×
+          </button>
+        </div>
+        <input
+          className="pdf-template-designer__input"
+          type="search"
+          placeholder="Search…"
+          value={tokenSearch}
+          autoFocus
+          onChange={(event) => setTokenSearch(event.target.value)}
+        />
+        <div className="pdf-template-designer__token-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tokenPicker.tab === tab.id}
+              className={`pdf-template-designer__token-tab${
+                tokenPicker.tab === tab.id ? " is-active" : ""
+              }`}
+              onClick={() => setTokenPicker({ ...tokenPicker, tab: tab.id })}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="pdf-template-designer__token-list">
+          {recent.length > 0 ? (
+            <div className="pdf-template-designer__token-group">Recent</div>
+          ) : null}
+          {recent.map(renderRow)}
+          {recent.length > 0 ? (
+            <div className="pdf-template-designer__token-group">
+              All {tabs.find((tab) => tab.id === tokenPicker.tab)?.label.toLowerCase()} data
+            </div>
+          ) : null}
+          {visible.length === 0 ? (
+            <div className="pdf-template-designer__status">Nothing matches.</div>
+          ) : (
+            visible.map(renderRow)
+          )}
+        </div>
+        <div className="pdf-template-designer__token-picker-foot">
+          Examples show a sample client. The real document fills in that
+          client's own details.
+        </div>
+      </div>
+    );
+  }, [
+    closeTokenPicker,
+    handleTokenPick,
+    recentTokenKeys,
+    tokenCatalog,
+    tokenPicker,
+    tokenSearch
+  ]);
+
   const placeAtClientPoint = useCallback(
     (type: FieldType, clientX: number, clientY: number) => {
       if (!overlayRef.current) {
@@ -4608,7 +4973,7 @@ export default function PdfDesignerCore(
         .getData(PALETTE_TYPE_DRAG_TYPE)
         .trim();
       const droppedTool =
-        visibleToolRailItems.find((tool) => tool.id === droppedToolId) ||
+        placementToolCandidates.find((tool) => tool.id === droppedToolId) ||
         visibleToolRailItems.find((tool) => tool.type === droppedToolId);
       if (droppedTool) {
         event.preventDefault();
@@ -4621,7 +4986,12 @@ export default function PdfDesignerCore(
         placeAtClientPoint(droppedToolId, event.clientX, event.clientY);
       }
     },
-    [placeAtClientPoint, placeToolAtClientPoint, visibleToolRailItems]
+    [
+      placeAtClientPoint,
+      placeToolAtClientPoint,
+      placementToolCandidates,
+      visibleToolRailItems
+    ]
   );
 
   const handleOverlayPointerDown = useCallback(
@@ -6399,6 +6769,63 @@ export default function PdfDesignerCore(
                       No palette tools are enabled in widget settings.
                     </div>
                   ) : null}
+                  {hasTokenCatalog ? (
+                    <div className="pdf-template-designer__token-palette">
+                      <div className="pdf-template-designer__token-palette-head">
+                        Client data
+                        <span className="pdf-template-designer__token-palette-badge">
+                          auto-filled
+                        </span>
+                      </div>
+                      {tokenToolItems.map((item) => {
+                        const entry = tokenCatalog.find(
+                          (candidate) =>
+                            `${TOKEN_TOOL_ID_PREFIX}${candidate.key}` === item.id
+                        );
+                        return (
+                          <button
+                            key={`palette_${item.id}`}
+                            className={`pdf-template-designer__button pdf-template-designer__palette-tool pdf-template-designer__palette-tool--token${
+                              placementToolId === item.id ? " is-active" : ""
+                            }`}
+                            title={item.tooltip}
+                            aria-label={item.tooltip}
+                            data-tooltip={item.tooltip}
+                            onClick={() => handlePlacementSelect(item.id)}
+                            onDoubleClick={() => addToolFieldCentered(item)}
+                            draggable
+                            onDragStart={(event) =>
+                              handlePaletteDragStart(event, item.id)
+                            }
+                            type="button"
+                          >
+                            <span className="pdf-template-designer__palette-tool-icon pdf-template-designer__palette-tool-icon--token">
+                              {tokenGlyph(entry?.kind || "client")}
+                            </span>
+                            <span className="pdf-template-designer__palette-tool-text">
+                              {item.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <div className="pdf-template-designer__token-palette-more">
+                        <button
+                          type="button"
+                          className="pdf-template-designer__button pdf-template-designer__palette-tool pdf-template-designer__palette-tool--more"
+                          onClick={() =>
+                            tokenPicker?.mode === "add"
+                              ? closeTokenPicker()
+                              : openTokenPicker("add")
+                          }
+                        >
+                          <span className="pdf-template-designer__palette-tool-text">
+                            More client data…
+                          </span>
+                        </button>
+                        {tokenPicker?.mode === "add" ? renderTokenPicker() : null}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -6700,7 +7127,13 @@ export default function PdfDesignerCore(
                       key={field.id}
                       className={`pdf-template-designer__field pdf-template-designer__field--${
                         field.type
-                      }${selectedFieldId === field.id ? " is-selected" : ""}`}
+                      }${selectedFieldId === field.id ? " is-selected" : ""}${
+                        hasTokenCatalog &&
+                        field.type === "multiVariableText" &&
+                        contentHasTokens(field.variablesSampleData)
+                          ? " is-token"
+                          : ""
+                      }`}
                       style={{
                         left: field.x * renderScale,
                         top: field.y * renderScale,
@@ -6724,9 +7157,25 @@ export default function PdfDesignerCore(
                       <div className="pdf-template-designer__field-content">
                         <div className="pdf-template-designer__field-label">
                           {field.type === "multiVariableText"
-                            ? field.variablesSampleData ||
-                              field.label ||
-                              field.key
+                            ? hasTokenCatalog &&
+                              contentHasTokens(field.variablesSampleData)
+                              ? parseTokenContentSegments(
+                                  field.variablesSampleData
+                                ).map((segment, index) =>
+                                  segment.kind === "token" ? (
+                                    <span
+                                      key={`seg_${index}`}
+                                      className="pdf-template-designer__field-token"
+                                    >
+                                      {tokenLabelByKey[segment.key] || segment.key}
+                                    </span>
+                                  ) : (
+                                    <span key={`seg_${index}`}>{segment.value}</span>
+                                  )
+                                )
+                              : field.variablesSampleData ||
+                                field.label ||
+                                field.key
                             : field.showLabel
                             ? field.label || field.key
                             : selectedFieldId === field.id
@@ -6902,7 +7351,9 @@ export default function PdfDesignerCore(
                               >
                                 <option value="text">Text</option>
                                 <option value="multiVariableText">
-                                  Multi-Variable Text
+                                  {hasTokenCatalog
+                                    ? "Text with client data"
+                                    : "Multi-Variable Text"}
                                 </option>
                                 <option value="checkbox">Checkbox</option>
                                 <option value="date">Date</option>
@@ -7457,7 +7908,120 @@ export default function PdfDesignerCore(
                         </div>
                       ) : null}
 
-                      {selectedField.type === "multiVariableText" ? (
+                      {selectedField.type === "multiVariableText" &&
+                      hasTokenCatalog ? (
+                        <div className="pdf-template-designer__inspector-section">
+                          {contentHasTokens(selectedField.variablesSampleData) ? (
+                            <div className="pdf-template-designer__token-type">
+                              {tokenGlyph("client")}
+                              <span>Client data</span>
+                              <span className="pdf-template-designer__token-type-note">
+                                filled automatically
+                              </span>
+                            </div>
+                          ) : null}
+                          <div className="pdf-template-designer__label">
+                            Content
+                          </div>
+                          <div className="pdf-template-designer__token-content">
+                            {parseTokenContentSegments(
+                              selectedField.variablesSampleData
+                            ).map((segment, index, segments) =>
+                              segment.kind === "token" ? (
+                                <span
+                                  key={`chip_${index}`}
+                                  className="pdf-template-designer__token-chip"
+                                >
+                                  {tokenLabelByKey[segment.key] || segment.key}
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove ${
+                                      tokenLabelByKey[segment.key] || segment.key
+                                    }`}
+                                    onClick={() =>
+                                      updateField(selectedField.id, {
+                                        variablesSampleData:
+                                          serializeTokenContentSegments(
+                                            segments.filter(
+                                              (_item, itemIndex) =>
+                                                itemIndex !== index
+                                            )
+                                          )
+                                      })
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ) : (
+                                <input
+                                  key={`gap_${index}`}
+                                  className="pdf-template-designer__token-gap"
+                                  type="text"
+                                  value={segment.value}
+                                  placeholder={
+                                    segments.length === 1 ? "Type text…" : ""
+                                  }
+                                  size={Math.max(2, segment.value.length + 1)}
+                                  aria-label="Text"
+                                  onChange={(event) =>
+                                    updateField(selectedField.id, {
+                                      variablesSampleData:
+                                        serializeTokenContentSegments(
+                                          segments.map((item, itemIndex) =>
+                                            itemIndex === index
+                                              ? {
+                                                  kind: "text",
+                                                  value: event.target.value
+                                                }
+                                              : item
+                                          )
+                                        )
+                                    })
+                                  }
+                                />
+                              )
+                            )}
+                          </div>
+                          <div className="pdf-template-designer__token-insert">
+                            <button
+                              type="button"
+                              className="pdf-template-designer__button pdf-template-designer__button--compact pdf-template-designer__token-insert-button"
+                              onClick={() =>
+                                tokenPicker?.mode === "insert"
+                                  ? closeTokenPicker()
+                                  : openTokenPicker("insert")
+                              }
+                            >
+                              + Insert client data
+                            </button>
+                            {tokenPicker?.mode === "insert"
+                              ? renderTokenPicker()
+                              : null}
+                          </div>
+                          <div className="pdf-template-designer__status">
+                            Shown on the form exactly as the client's record has
+                            it. Staff can't change it while filling.
+                          </div>
+                          <details className="pdf-template-designer__token-advanced">
+                            <summary>Advanced</summary>
+                            <div className="pdf-template-designer__status">
+                              Key: <code>{selectedField.key}</code>
+                            </div>
+                            <textarea
+                              className="pdf-template-designer__input pdf-template-designer__textarea"
+                              rows={3}
+                              value={selectedField.variablesSampleData}
+                              onChange={(event) =>
+                                updateField(selectedField.id, {
+                                  variablesSampleData: event.target.value
+                                })
+                              }
+                              aria-label="Raw content"
+                            />
+                          </details>
+                        </div>
+                      ) : selectedField.type === "multiVariableText" ? (
                         <div className="pdf-template-designer__inspector-section">
                           <div className="pdf-template-designer__label">
                             Variables Sample Data

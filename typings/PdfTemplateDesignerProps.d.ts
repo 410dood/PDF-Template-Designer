@@ -37,6 +37,8 @@ export type CustomActionButton3RenderModeEnum = "button" | "link";
 
 export type CustomActionButton3StyleEnum = "default" | "primary" | "success" | "info" | "warning" | "danger" | "link";
 
+export type PageLayoutEnum = "continuous" | "single";
+
 export interface DataSourcePreviewType {
     templateJsonAttr: string;
     basePdfSource: {} | { caption: string } | { type: string } | null;
@@ -53,6 +55,11 @@ export interface PdfTemplateDesignerContainerProps {
     style?: CSSProperties;
     tabIndex?: number;
     dataSource: DataSourceType[];
+    tokenCatalogSource?: ListValue;
+    tokenCatalogKeyAttr?: ListAttributeValue<string>;
+    tokenCatalogLabelAttr?: ListAttributeValue<string>;
+    tokenCatalogKindAttr?: ListAttributeValue<string>;
+    paletteTokenKeys: string;
     viewMode: ViewModeEnum;
     showPagesSection: boolean;
     showPaletteSection: boolean;
@@ -146,6 +153,8 @@ export interface PdfTemplateDesignerContainerProps {
     pdfJsWorkerUrl?: DynamicValue<string>;
     pdfJsScriptUrl?: DynamicValue<string>;
     sigWebScriptUrl?: DynamicValue<string>;
+    pageLayout: PageLayoutEnum;
+    requiredHighlight?: DynamicValue<boolean>;
 }
 
 export interface PdfTemplateDesignerPreviewProps {
@@ -160,6 +169,11 @@ export interface PdfTemplateDesignerPreviewProps {
     renderMode: "design" | "xray" | "structure";
     translate: (text: string) => string;
     dataSource: DataSourcePreviewType[];
+    tokenCatalogSource: {} | { caption: string } | { type: string } | null;
+    tokenCatalogKeyAttr: string;
+    tokenCatalogLabelAttr: string;
+    tokenCatalogKindAttr: string;
+    paletteTokenKeys: string;
     viewMode: ViewModeEnum;
     showPagesSection: boolean;
     showPaletteSection: boolean;
@@ -253,4 +267,6 @@ export interface PdfTemplateDesignerPreviewProps {
     pdfJsWorkerUrl: string;
     pdfJsScriptUrl: string;
     sigWebScriptUrl: string;
+    pageLayout: PageLayoutEnum;
+    requiredHighlight: string;
 }

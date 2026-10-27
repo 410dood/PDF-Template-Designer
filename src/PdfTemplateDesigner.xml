@@ -61,6 +61,39 @@
             </property>
         </propertyGroup>
 
+        <propertyGroup caption="Client Data (tokens)">
+            <property key="tokenCatalogSource" type="datasource" isList="true" required="false">
+                <caption>Token catalog</caption>
+                <description>Designer mode: list of token definitions (e.g. FormStudio.DS_TokenDef_Catalog). Drives the Client data palette group and the Insert client data picker, so admins pick "Client full name" instead of typing {client.full_name}.</description>
+            </property>
+            <property key="tokenCatalogKeyAttr" type="attribute" dataSource="tokenCatalogSource" required="false">
+                <caption>Catalog: token key</caption>
+                <description>Token key, for example client.full_name.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                </attributeTypes>
+            </property>
+            <property key="tokenCatalogLabelAttr" type="attribute" dataSource="tokenCatalogSource" required="false">
+                <caption>Catalog: display name</caption>
+                <description>Human-readable name shown in the palette, on the canvas and in the picker.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                </attributeTypes>
+            </property>
+            <property key="tokenCatalogKindAttr" type="attribute" dataSource="tokenCatalogSource" required="false">
+                <caption>Catalog: kind</caption>
+                <description>Optional. Client, Doc/Document or Computed (picker tabs Client / Document / Dates). Derived from the key prefix when omitted.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                    <attributeType name="Enum" />
+                </attributeTypes>
+            </property>
+            <property key="paletteTokenKeys" type="string" required="false" defaultValue="client.full_name,client.dob,client.chart_id,sys.date,doc.provider_name">
+                <caption>Palette tokens</caption>
+                <description>Comma-separated token keys shown as ready-to-drag items in the Client data palette group. Keys missing from the catalog are skipped.</description>
+            </property>
+        </propertyGroup>
+
         <propertyGroup caption="Display Mode And Layout">
             <property key="viewMode" type="enumeration" defaultValue="designer" required="true">
                 <caption>View mode</caption>
