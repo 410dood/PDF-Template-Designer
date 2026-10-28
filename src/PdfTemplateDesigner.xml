@@ -88,6 +88,13 @@
                     <attributeType name="Enum" />
                 </attributeTypes>
             </property>
+            <property key="tokenCatalogSampleAttr" type="attribute" dataSource="tokenCatalogSource" required="false">
+                <caption>Catalog: sample value</caption>
+                <description>Optional. Example value shown next to the token in the Insert client data picker (for a fictional sample client).</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                </attributeTypes>
+            </property>
             <property key="paletteTokenKeys" type="string" required="false" defaultValue="client.full_name,client.dob,client.chart_id,sys.date,doc.provider_name">
                 <caption>Palette tokens</caption>
                 <description>Comma-separated token keys shown as ready-to-drag items in the Client data palette group. Keys missing from the catalog are skipped.</description>

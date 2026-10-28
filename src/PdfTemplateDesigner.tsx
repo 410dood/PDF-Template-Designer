@@ -49,6 +49,7 @@ export interface PdfDesignerCoreProps {
   tokenCatalogKeyAttr?: ListAttributeValue<string>;
   tokenCatalogLabelAttr?: ListAttributeValue<string>;
   tokenCatalogKindAttr?: ListAttributeValue<string>;
+  tokenCatalogSampleAttr?: ListAttributeValue<string>;
   paletteTokenKeys?: string;
   pdfJsWorkerUrl?: DynamicValue<string>;
   pdfJsScriptUrl?: DynamicValue<string>;
@@ -320,6 +321,7 @@ const TOKEN_RECENT_STORAGE_KEY = "pdfTemplateDesigner.recentTokens";
 const TOKEN_PLACEHOLDER_PATTERN = /\{\s*([^{}]+?)\s*\}/g;
 type TokenKind = "client" | "doc" | "computed" | "other";
 interface TokenCatalogEntry {
+  sample: string;
   key: string;
   label: string;
   kind: TokenKind;
@@ -327,21 +329,6 @@ interface TokenCatalogEntry {
 type TokenContentSegment =
   | { kind: "text"; value: string }
   | { kind: "token"; key: string };
-const TOKEN_SAMPLE_VALUES: Record<string, string> = {
-  "client.full_name": "Madison Welch",
-  "client.first_name": "Madison",
-  "client.last_name": "Welch",
-  "client.dob": "01/02/1990",
-  "client.chart_id": "WEMA046517",
-  "client.record_id": "1047",
-  "client.gender": "Female",
-  "doc.title": "Property Receipt",
-  "doc.status": "Draft",
-  "doc.provider_name": "Madison Gill",
-  "sys.date": "10/27/2026",
-  "sys.time": "09:41",
-  "sys.datetime": "10/27/2026 09:41"
-};
 function normalizeTokenKind(raw: unknown, key: string): TokenKind {
   const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   if (value === "client") {
@@ -3034,10 +3021,12 @@ export default function PdfDesignerCore(
       seen.add(key);
       const label = String(props.tokenCatalogLabelAttr?.get(item).value ?? "").trim();
       const kindRaw = props.tokenCatalogKindAttr?.get(item).value;
+      const sample = String(props.tokenCatalogSampleAttr?.get(item).value ?? "").trim();
       entries.push({
         key,
         label: label || key,
-        kind: normalizeTokenKind(kindRaw, key)
+        kind: normalizeTokenKind(kindRaw, key),
+        sample
       });
     }
     return entries;
@@ -3047,7 +3036,8 @@ export default function PdfDesignerCore(
     props.tokenCatalogSource?.items,
     props.tokenCatalogKeyAttr,
     props.tokenCatalogLabelAttr,
-    props.tokenCatalogKindAttr
+    props.tokenCatalogKindAttr,
+    props.tokenCatalogSampleAttr
   ]);
   const tokenLabelByKey = useMemo(() => {
     const map: Record<string, string> = {};
@@ -4883,7 +4873,7 @@ export default function PdfDesignerCore(
           {entry.label}
         </span>
         <span className="pdf-template-designer__token-row-sample">
-          {TOKEN_SAMPLE_VALUES[entry.key] || ""}
+          {entry.sample}
         </span>
       </button>
     );

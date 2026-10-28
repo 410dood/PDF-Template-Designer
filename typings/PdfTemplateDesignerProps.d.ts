@@ -59,6 +59,7 @@ export interface PdfTemplateDesignerContainerProps {
     tokenCatalogKeyAttr?: ListAttributeValue<string>;
     tokenCatalogLabelAttr?: ListAttributeValue<string>;
     tokenCatalogKindAttr?: ListAttributeValue<string>;
+    tokenCatalogSampleAttr?: ListAttributeValue<string>;
     paletteTokenKeys: string;
     viewMode: ViewModeEnum;
     showPagesSection: boolean;
@@ -173,6 +174,7 @@ export interface PdfTemplateDesignerPreviewProps {
     tokenCatalogKeyAttr: string;
     tokenCatalogLabelAttr: string;
     tokenCatalogKindAttr: string;
+    tokenCatalogSampleAttr: string;
     paletteTokenKeys: string;
     viewMode: ViewModeEnum;
     showPagesSection: boolean;
